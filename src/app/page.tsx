@@ -1,9 +1,13 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import dynamic from 'next/dynamic'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+
+// MapView: dynamic import to avoid Leaflet SSR issues
+const MapView = dynamic(() => import('@/components/MapView'), { ssr: false })
 
 // shadcn/ui components
 import { Button } from '@/components/ui/button'
@@ -87,7 +91,7 @@ const TRUST_BADGES = [
   { key: 'recommended', label: 'Recomendado', icon: '👍' },
 ]
 
-type ViewType = 'welcome' | 'providers' | 'profile' | 'register' | 'login' | 'mypanel' | 'editprofile' | 'forums' | 'forumDetail'
+type ViewType = 'welcome' | 'providers' | 'profile' | 'register' | 'login' | 'mypanel' | 'editprofile' | 'forums' | 'forumDetail' | 'map'
 
 // =============================================
 // HELPER FUNCTIONS
@@ -226,7 +230,17 @@ const staggerItem = {
 
 export default function ChambitaPage() {
   // ---- Core view state ----
-  const [view, setView] = useState<ViewType>('welcome')
+  // Empezar en mapa si ya hay sesión
+  const [view, setView] = useState<ViewType>(() => {
+    try {
+      const stored = localStorage.getItem('chambita_session')
+      if (stored) {
+        const session = JSON.parse(stored)
+        if (session.provider && session.token) return 'map'
+      }
+    } catch { /* ignore */ }
+    return 'welcome'
+  })
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null)
   const [selectedForumId, setSelectedForumId] = useState<string | null>(null)
@@ -412,7 +426,8 @@ export default function ChambitaPage() {
   const goBack = useCallback(() => {
     if (view === 'profile' || view === 'forumDetail') setView('providers')
     else if (view === 'editprofile') setView('mypanel')
-    else if (view === 'providers') setView('welcome')
+    else if (view === 'providers') setView('map')
+    else if (view === 'map') setView('welcome')
     else setView('welcome')
   }, [view])
 
@@ -498,7 +513,8 @@ export default function ChambitaPage() {
 
   // ---- Load data on view change ----
   useEffect(() => {
-    if (view === 'providers') void fetchProviders(filterCategory, availableOnly, searchQuery || undefined)
+    if (view === 'map') void fetchProviders(filterCategory, availableOnly, searchQuery || undefined)
+    else if (view === 'providers') void fetchProviders(filterCategory, availableOnly, searchQuery || undefined)
     else if (view === 'profile' && selectedProviderId) void fetchProviderDetail(selectedProviderId)
     else if (view === 'forums') void fetchForums()
     else if (view === 'forumDetail' && selectedForumId) void fetchForumDetail(selectedForumId)
@@ -506,7 +522,7 @@ export default function ChambitaPage() {
   }, [view])
 
   useEffect(() => {
-    if (view === 'providers') {
+    if (view === 'map' || view === 'providers') {
       void fetchProviders(filterCategory, availableOnly, searchQuery || undefined)
     }
   }, [filterCategory, availableOnly, searchQuery])
@@ -548,7 +564,7 @@ export default function ChambitaPage() {
         localStorage.setItem('chambita_session', JSON.stringify({ provider: data.provider, token: data.token }))
         toast.success('¡Bienvenido de vuelta!')
         setSelectedProviderId(data.provider.id)
-        setView('mypanel')
+        setView('map')
       } else {
         setLoginError(data.error || 'Error al iniciar sesión')
       }
@@ -599,9 +615,23 @@ export default function ChambitaPage() {
       })
       const data = await res.json()
       if (res.ok || data.alreadyExists) {
-        toast.success('¡Registro exitoso! Inicia sesión con tu teléfono y PIN')
-        setLoginPhone(regForm.phone)
-        setView('login')
+        toast.success('¡Registro exitoso! Iniciando sesión...')
+        // Auto-login after register
+        try {
+          const loginRes = await fetch('/api/providers/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone: regForm.phone.trim(), pin: regForm.pin.trim() }),
+          })
+          const loginData = await loginRes.json()
+          if (loginRes.ok && loginData.success) {
+            setCurrentProvider(loginData.provider)
+            setCurrentToken(loginData.token)
+            localStorage.setItem('chambita_session', JSON.stringify({ provider: loginData.provider, token: loginData.token }))
+            setSelectedProviderId(loginData.provider.id)
+          }
+        } catch { /* ignore */ }
+        setView('map')
         // Reset form
         setRegStep(1)
         setRegForm({ name: '', businessName: '', phone: '', pin: '', confirmPin: '', serviceCategory: '', vehicleType: '', bio: '', services: '', priceRange: '', schedule: '' })
@@ -888,8 +918,15 @@ export default function ChambitaPage() {
         </div>
       </div>
 
-      {/* CTA Buttons */}
+      {/* CTA Buttons - MAPA ES PRIMARIO */}
       <div className="px-4 flex flex-col gap-3">
+        <Button
+          className="h-14 text-lg rounded-xl font-bold bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-200"
+          onClick={() => setView('map')}
+        >
+          <MapPin className="mr-2" size={22} />
+          Ver Mapa — Servicios Cerca de Mí
+        </Button>
         <Button
           className="h-12 text-base rounded-xl font-semibold bg-orange-600 hover:bg-orange-700 text-white shadow-lg shadow-orange-200"
           onClick={() => setView('register')}
@@ -2367,6 +2404,142 @@ export default function ChambitaPage() {
   }
 
   // ===========================
+  // MAP VIEW (PREMISA PRINCIPAL)
+  // ===========================
+  const renderMap = () => (
+    <div className="fixed inset-0 z-0 flex flex-col" style={{ marginTop: 0 }}>
+      {/* Full-screen Map */}
+      <div id="chambita-map" className="flex-1 w-full" style={{ zIndex: 0 }} />
+
+      {/* MapView component handles Leaflet init */}
+      <MapView
+        userLat={userLat}
+        userLng={userLng}
+        providers={providers}
+        categories={CATEGORIES}
+        onProviderClick={goProfile}
+        onCategoryFilter={setFilterCategory}
+        filterCategory={filterCategory}
+        availableOnly={availableOnly}
+        onToggleAvailable={() => setAvailableOnly(!availableOnly)}
+      />
+
+      {/* Floating Top Bar */}
+      <div className="absolute top-0 left-0 right-0 z-10 p-3">
+        <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-lg p-3 space-y-3">
+          {/* Top row: back + title + panel */}
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9" onClick={goBack}>
+              <ArrowLeft size={18} />
+            </Button>
+            <div className="flex-1 flex items-center justify-center gap-2">
+              <MapPin size={16} className="text-green-600" />
+              <span className="font-bold text-gray-800 text-sm">Mapa de Servicios</span>
+              <span className="text-xs text-gray-400">({providers.length})</span>
+            </div>
+            {currentProvider && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0 h-9 text-xs rounded-lg border-orange-200 text-orange-700 hover:bg-orange-50"
+                onClick={() => setView('mypanel')}
+              >
+                <Briefcase size={14} className="mr-1" />
+                Mi Panel
+              </Button>
+            )}
+            {!currentProvider && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0 h-9 text-xs rounded-lg border-orange-200 text-orange-700 hover:bg-orange-50"
+                onClick={() => setView('register')}
+              >
+                <Plus size={14} className="mr-1" />
+                Inscríbete
+              </Button>
+            )}
+          </div>
+
+          {/* Category chips scrollable */}
+          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+            <Badge
+              variant={filterCategory === null ? 'default' : 'outline'}
+              className={cn(
+                'cursor-pointer shrink-0 rounded-full px-3 text-xs font-medium',
+                filterCategory === null ? 'bg-green-600 text-white border-green-600' : 'hover:bg-green-50 text-gray-600'
+              )}
+              onClick={() => setFilterCategory(null)}
+            >
+              Todos
+            </Badge>
+            {Object.entries(CATEGORIES).map(([key, cat]) => (
+              <Badge
+                key={key}
+                variant={filterCategory === key ? 'default' : 'outline'}
+                className={cn(
+                  'cursor-pointer shrink-0 rounded-full px-3 text-xs font-medium',
+                  filterCategory === key ? 'text-white border-transparent' : 'hover:bg-green-50 text-gray-600',
+                )}
+                style={filterCategory === key ? { backgroundColor: cat.color } : {}}
+                onClick={() => setFilterCategory(filterCategory === key ? null : key)}
+              >
+                {cat.emoji} {cat.label}
+              </Badge>
+            ))}
+          </div>
+
+          {/* Available toggle */}
+          <div className="flex items-center gap-2">
+            <Switch checked={availableOnly} onCheckedChange={setAvailableOnly} />
+            <span className="text-xs text-gray-600">Solo disponibles ahora</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Floating Bottom: provider cards preview */}
+      <div className="absolute bottom-0 left-0 right-0 z-10 pb-4 px-3">
+        <div className="flex gap-3 overflow-x-auto scrollbar-none pb-2">
+          {providers.filter(p => p.available || !availableOnly).slice(0, 8).map((p) => {
+            const cat = CATEGORIES[p.serviceCategory]
+            const dist = (userLat != null && userLng != null && p.lat && p.lng)
+              ? getDistanceKm(userLat, userLng, p.lat, p.lng)
+              : ''
+            return (
+              <Card
+                key={p.id}
+                className="shrink-0 w-44 p-3 hover:shadow-lg transition-shadow border-0 bg-white/95 backdrop-blur cursor-pointer shadow-md"
+                style={{ gap: 0 }}
+                onClick={() => goProfile(p.id)}
+              >
+                <div className="flex items-center gap-2 mb-1.5">
+                  <div
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0"
+                    style={{ backgroundColor: cat?.color || '#ea580c' }}
+                  >
+                    {cat?.emoji || '📍'}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-gray-900 text-xs truncate">{p.name}</p>
+                    {dist && <p className="text-[10px] text-gray-400">{dist}</p>}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-gray-500 truncate">{cat?.label}</span>
+                  <div className={cn(
+                    'w-2 h-2 rounded-full shrink-0',
+                    p.available ? 'bg-green-500' : 'bg-gray-300'
+                  )} />
+                </div>
+              </Card>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+
+  // ===========================
   // MAIN RENDER
   // ===========================
   return (
@@ -2374,6 +2547,7 @@ export default function ChambitaPage() {
       {/* Main Content */}
       <main className="flex-1 max-w-4xl mx-auto w-full">
         <AnimatePresence mode="wait">
+          {view === 'map' && <div key="map">{renderMap()}</div>}
           {view === 'welcome' && <div key="welcome">{renderWelcome()}</div>}
           {view === 'providers' && <div key="providers">{renderProviders()}</div>}
           {view === 'profile' && <div key="profile">{renderProfile()}</div>}
