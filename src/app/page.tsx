@@ -48,6 +48,7 @@ export const CATEGORIES: Record<string, { label: string; emoji: string; color: s
   mascotas: { label: 'Automóvil de Mascotas', emoji: '🐕', color: '#d97706', desc: 'Transporte y cuidado de mascotas' },
   cerrajeria: { label: 'Automóvil de Llaves', emoji: '🔑', color: '#6d28d9', desc: 'Mecánicos de llaves y cerrajería' },
   grua: { label: 'Grúas', emoji: '🏗️', color: '#be185d', desc: 'Servicio de grúas y remolque' },
+  banco_energia: { label: 'Automóvil de Banco de Energía', emoji: '🔋', color: '#059669', desc: 'Carros banco de energía y carga portátil' },
 }
 
 export const VEHICLE_TYPES: Record<string, string> = {
@@ -62,6 +63,7 @@ export const VEHICLE_TYPES: Record<string, string> = {
   bote_recreativo: 'Bote Recreativo',
   carro_mascotas: 'Carro de Mascotas',
   grua: 'Grúa',
+  banco_energia: 'Carro Banco de Energía',
 }
 
 export const CATEGORY_VEHICLES: Record<string, string[]> = {
@@ -75,6 +77,7 @@ export const CATEGORY_VEHICLES: Record<string, string[]> = {
   mascotas: ['carro_mascotas', 'carro_moderno'],
   cerrajeria: [],
   grua: ['grua'],
+  banco_energia: ['banco_energia'],
 }
 
 const TRUST_BADGES = [
