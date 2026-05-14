@@ -38,15 +38,15 @@ import {
 // =============================================
 
 export const CATEGORIES: Record<string, { label: string; emoji: string; color: string; desc: string }> = {
-  pasaje: { label: 'Pasaje', emoji: '🚗', color: '#ea580c', desc: 'Transporte de pasajeros' },
-  carga: { label: 'Carga', emoji: '🚚', color: '#7c3aed', desc: 'Transporte de carga y mudanzas' },
-  comida: { label: 'Comida', emoji: '🍕', color: '#dc2626', desc: 'Carros de comida y snacks' },
-  barbero: { label: 'Barberos', emoji: '💈', color: '#2563eb', desc: 'Barberos y peluqueros itinerantes' },
-  fregador: { label: 'Fregado', emoji: '🧹', color: '#16a34a', desc: 'Carros de fregado y limpieza' },
-  recreativo: { label: 'Carros Recreativos', emoji: '🚘', color: '#e11d48', desc: 'Carros recreativos y de paseo' },
-  bote: { label: 'Botes Recreativos', emoji: '⛵', color: '#0891b2', desc: 'Botes recreativos y acuáticos' },
-  mascotas: { label: 'Mascotas', emoji: '🐕', color: '#d97706', desc: 'Transporte y cuidado de mascotas' },
-  cerrajeria: { label: 'Llaves', emoji: '🔑', color: '#6d28d9', desc: 'Mecánicos de llaves y cerrajería' },
+  pasaje: { label: 'Automóvil de Pasaje', emoji: '🚗', color: '#ea580c', desc: 'Transporte de pasajeros' },
+  carga: { label: 'Automóvil de Carga', emoji: '🚚', color: '#7c3aed', desc: 'Transporte de carga y mudanzas' },
+  comida: { label: 'Automóvil de Comida', emoji: '🍕', color: '#dc2626', desc: 'Carros de comida y snacks' },
+  barbero: { label: 'Automóvil de Barberos', emoji: '💈', color: '#2563eb', desc: 'Barberos y peluqueros itinerantes' },
+  fregador: { label: 'Automóvil de Fregado', emoji: '🧹', color: '#16a34a', desc: 'Carros de fregado y limpieza' },
+  recreativo: { label: 'Automóvil Recreativo', emoji: '🚘', color: '#e11d48', desc: 'Carros recreativos y de paseo' },
+  bote: { label: 'Bote Recreativo', emoji: '⛵', color: '#0891b2', desc: 'Botes recreativos y acuáticos' },
+  mascotas: { label: 'Automóvil de Mascotas', emoji: '🐕', color: '#d97706', desc: 'Transporte y cuidado de mascotas' },
+  cerrajeria: { label: 'Automóvil de Llaves', emoji: '🔑', color: '#6d28d9', desc: 'Mecánicos de llaves y cerrajería' },
 }
 
 export const VEHICLE_TYPES: Record<string, string> = {
@@ -757,10 +757,10 @@ export default function ChambitaPage() {
                   className="h-1.5"
                   style={{ backgroundColor: cat.color }}
                 />
-                <CardContent className="p-4 flex flex-col items-center text-center gap-2">
+                <CardContent className="p-2.5 md:p-4 flex flex-col items-center text-center gap-1.5 md:gap-2">
                   <span className="text-2xl md:text-3xl group-hover:scale-110 transition-transform">{cat.emoji}</span>
-                  <span className="font-semibold text-gray-800 text-xs md:text-sm">{cat.label}</span>
-                  <span className="text-[10px] md:text-xs text-gray-500 leading-tight hidden md:block">{cat.desc}</span>
+                  <span className="font-semibold text-gray-800 text-[10px] md:text-xs leading-tight">{cat.label}</span>
+                  <span className="text-[9px] md:text-[10px] text-gray-500 leading-tight hidden md:block">{cat.desc}</span>
                 </CardContent>
               </Card>
             </motion.div>
