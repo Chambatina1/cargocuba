@@ -91,7 +91,7 @@ const TRUST_BADGES = [
   { key: 'recommended', label: 'Recomendado', icon: '👍' },
 ]
 
-type ViewType = 'welcome' | 'providers' | 'profile' | 'register' | 'login' | 'mypanel' | 'editprofile' | 'forums' | 'forumDetail' | 'map'
+type ViewType = 'welcome' | 'providers' | 'profile' | 'register' | 'login' | 'mypanel' | 'editprofile' | 'forums' | 'forumDetail' | 'map' | 'clientLogin' | 'clientRegister' | 'clientPanel'
 
 interface SharedLocation {
   id: string
@@ -260,6 +260,14 @@ export default function ChambitaPage() {
   const [currentProvider, setCurrentProvider] = useState<Provider | null>(null)
   const [currentToken, setCurrentToken] = useState<string | null>(null)
 
+  // ---- Client auth state ----
+  const [currentClient, setCurrentClient] = useState<{ id: string; name: string; phone: string; photo: string | null } | null>(null)
+  const [clientLoginPhone, setClientLoginPhone] = useState('')
+  const [clientLoginError, setClientLoginError] = useState('')
+  const [clientRegisterForm, setClientRegisterForm] = useState({ name: '', phone: '' })
+  const [clientRegisterPhoto, setClientRegisterPhoto] = useState<string | null>(null)
+  const [clientRegistering, setClientRegistering] = useState(false)
+
   // ---- Geolocation state (PREMISA OBLIGATORIA) ----
   const [userLat, setUserLat] = useState<number | null>(null)
   const [userLng, setUserLng] = useState<number | null>(null)
@@ -326,6 +334,7 @@ export default function ChambitaPage() {
   // ---- Client shared location state ----
   const [sharedLocations, setSharedLocations] = useState<SharedLocation[]>([])
   const [shareLocationOpen, setShareLocationOpen] = useState(false)
+  const [shareTargetProviderId, setShareTargetProviderId] = useState<string | null>(null)
   const [shareClientName, setShareClientName] = useState('')
   const [shareClientPhoto, setShareClientPhoto] = useState<string | null>(null)
   const [sharingLocation, setSharingLocation] = useState(false)
@@ -345,6 +354,19 @@ export default function ChambitaPage() {
           queueMicrotask(() => {
             setCurrentProvider(session.provider)
             setCurrentToken(session.token)
+          })
+        }
+      }
+    } catch { /* ignore */ }
+
+    // Load client session
+    try {
+      const clientStored = localStorage.getItem('chambita_client')
+      if (clientStored) {
+        const client = JSON.parse(clientStored)
+        if (client && client.id) {
+          queueMicrotask(() => {
+            setCurrentClient(client)
           })
         }
       }
@@ -442,7 +464,18 @@ export default function ChambitaPage() {
     return () => clearInterval(interval)
   }, [fetchSharedLocations])
 
-  // ---- Share location handler ----
+  // ---- Update location sharing to use client session ----
+  const openShareLocation = (providerId: string) => {
+    setShareTargetProviderId(providerId)
+    if (currentClient) {
+      setShareClientName(currentClient.name)
+      setShareClientPhoto(currentClient.photo)
+    } else {
+      setShareClientName('')
+      setShareClientPhoto(null)
+    }
+    setShareLocationOpen(true)
+  }
   const handleShareLocation = async (providerId: string) => {
     if (!userLat || !userLng) {
       toast.error('Activa tu ubicación GPS para compartir')
@@ -501,6 +534,9 @@ export default function ChambitaPage() {
   const goBack = useCallback(() => {
     if (view === 'profile' || view === 'forumDetail') setView('providers')
     else if (view === 'editprofile') setView('mypanel')
+    else if (view === 'clientRegister') setView('clientLogin')
+    else if (view === 'clientPanel') setView('welcome')
+    else if (view === 'clientLogin') setView('welcome')
     else if (view === 'providers') setView('map')
     else if (view === 'map') setView('welcome')
     else setView('welcome')
@@ -572,10 +608,10 @@ export default function ChambitaPage() {
     setLoading(false)
   }, [])
 
-  const fetchMessages = useCallback(async (providerId: string) => {
+  const fetchMessages = useCallback(async (providerId: string, clientId?: string) => {
     try {
       const params = new URLSearchParams({
-        user1Type: 'client', user1Id: 'guest',
+        user1Type: 'client', user1Id: clientId || currentClient?.id || 'guest',
         user2Type: 'provider', user2Id: providerId,
       })
       const res = await fetch(`/api/messages/conversation?${params.toString()}`)
@@ -584,7 +620,8 @@ export default function ChambitaPage() {
         setMessages(data)
       }
     } catch { /* ignore */ }
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentClient])
 
   // ---- Load data on view change ----
   useEffect(() => {
@@ -791,12 +828,12 @@ export default function ChambitaPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           content: chatMessage.trim(),
-          senderType: 'client', senderId: 'guest',
+          senderType: 'client', senderId: currentClient?.id || 'guest',
           receiverType: 'provider', receiverId: chatTarget.id,
         }),
       })
       setChatMessage('')
-      fetchMessages(chatTarget.id)
+      fetchMessages(chatTarget.id, currentClient?.id || 'guest')
     } catch {
       toast.error('Error al enviar mensaje')
     }
@@ -858,7 +895,82 @@ export default function ChambitaPage() {
     setCurrentProvider(null)
     setCurrentToken(null)
     localStorage.removeItem('chambita_session')
+    // Also clear client session
+    setCurrentClient(null)
+    localStorage.removeItem('chambita_client')
     toast.success('Sesión cerrada')
+    setView('welcome')
+  }
+
+  // ---- Client login handler ----
+  const handleClientLogin = async () => {
+    setClientLoginError('')
+    if (!clientLoginPhone.trim()) {
+      setClientLoginError('El teléfono es obligatorio')
+      return
+    }
+    try {
+      const res = await fetch('/api/clients/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: clientLoginPhone.trim() }),
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        const client = { id: data.client.id, name: data.client.name, phone: data.client.phone, photo: data.client.photo }
+        setCurrentClient(client)
+        localStorage.setItem('chambita_client', JSON.stringify(client))
+        toast.success(`¡Bienvenido, ${data.client.name}!`)
+        setView('map')
+        setClientLoginPhone('')
+      } else {
+        setClientLoginError(data.error || 'Error al iniciar sesión')
+      }
+    } catch {
+      setClientLoginError('Error de conexión')
+    }
+  }
+
+  // ---- Client register handler ----
+  const handleClientRegister = async () => {
+    if (!clientRegisterForm.name.trim() || !clientRegisterForm.phone.trim()) {
+      toast.error('Nombre y teléfono son obligatorios')
+      return
+    }
+    setClientRegistering(true)
+    try {
+      const res = await fetch('/api/clients/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: clientRegisterForm.name.trim(),
+          phone: clientRegisterForm.phone.trim(),
+          photo: clientRegisterPhoto,
+        }),
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        const client = { id: data.client.id, name: data.client.name, phone: data.client.phone, photo: data.client.photo }
+        setCurrentClient(client)
+        localStorage.setItem('chambita_client', JSON.stringify(client))
+        toast.success(data.alreadyExists ? `¡Bienvenido de vuelta, ${data.client.name}!` : '¡Registro exitoso!')
+        setView('map')
+        setClientRegisterForm({ name: '', phone: '' })
+        setClientRegisterPhoto(null)
+      } else {
+        toast.error(data.error || 'Error al registrarse')
+      }
+    } catch {
+      toast.error('Error de conexión')
+    }
+    setClientRegistering(false)
+  }
+
+  // ---- Client logout handler ----
+  const handleClientLogout = () => {
+    setCurrentClient(null)
+    localStorage.removeItem('chambita_client')
+    toast.success('Sesión de cliente cerrada')
     setView('welcome')
   }
 
@@ -866,7 +978,9 @@ export default function ChambitaPage() {
   const openChat = (provider: Provider) => {
     setChatTarget(provider)
     setChatOpen(true)
-    fetchMessages(provider.id)
+    // Use client ID if logged in, otherwise 'guest'
+    const clientId = currentClient?.id || 'guest'
+    fetchMessages(provider.id, clientId)
   }
 
   // File to base64 helper
@@ -942,8 +1056,8 @@ export default function ChambitaPage() {
       <img
         src="/logo-chambita-sm.png"
         alt="Chambita"
-        className="w-10 h-10 rounded-xl shadow-md bg-white cursor-pointer hover:scale-105 transition-transform"
-        style={{ border: '2px solid #f3f4f6' }}
+        className="w-10 h-10 rounded-lg shadow-md cursor-pointer hover:scale-105 transition-transform"
+        style={{ backgroundColor: 'white' }}
       />
     </div>
   )
@@ -1045,13 +1159,25 @@ export default function ChambitaPage() {
           <MapPin className="mr-2" size={22} />
           Ver Mapa — Servicios Cerca de Mí
         </Button>
-        <Button
-          className="h-12 text-base rounded-xl font-semibold bg-orange-600 hover:bg-orange-700 text-white shadow-lg shadow-orange-200"
-          onClick={() => setView('register')}
-        >
-          <Briefcase className="mr-2" size={20} />
-          Soy Proveedor — Inscríbete
-        </Button>
+        <div className="flex gap-3">
+          <Button
+            className="flex-1 h-12 text-base rounded-xl font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-200"
+            onClick={() => {
+              if (currentClient) { setView('map') }
+              else { setView('clientLogin') }
+            }}
+          >
+            <User className="mr-2" size={20} />
+            Soy Cliente
+          </Button>
+          <Button
+            className="flex-1 h-12 text-base rounded-xl font-semibold bg-orange-600 hover:bg-orange-700 text-white shadow-lg shadow-orange-200"
+            onClick={() => setView('register')}
+          >
+            <Briefcase className="mr-2" size={20} />
+            Soy Proveedor
+          </Button>
+        </div>
         <div className="flex gap-3">
           <Button
             variant="outline"
@@ -2522,6 +2648,324 @@ export default function ChambitaPage() {
   }
 
   // ===========================
+  // CLIENT LOGIN VIEW
+  // ===========================
+  const renderClientLogin = () => (
+    <motion.div variants={fadeVariants} initial="initial" animate="animate" exit="exit" className="flex flex-col min-h-[calc(100vh-4rem)]">
+      {/* Header */}
+      <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b px-4 py-3 flex items-center gap-3">
+        <Button variant="ghost" size="icon" className="shrink-0" onClick={goBack}>
+          <ArrowLeft size={20} />
+        </Button>
+        <h1 className="text-lg font-bold text-gray-900">Soy Cliente — Entrar</h1>
+      </div>
+
+      <div className="flex-1 flex flex-col items-center justify-center px-4 py-8">
+        <motion.div
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ duration: 0.4 }}
+          className="w-full max-w-sm space-y-6"
+        >
+          <div className="text-center">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 shadow-lg mb-4">
+              <User className="text-white" size={32} />
+            </div>
+            <h2 className="text-xl font-bold text-gray-900">Hola, Cliente</h2>
+            <p className="text-sm text-gray-500 mt-1">Ingresa tu teléfono para acceder</p>
+          </div>
+
+          <div className="space-y-4 bg-white p-6 rounded-2xl shadow-sm border">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-700">Tu número de teléfono</Label>
+              <Input
+                placeholder="5XXXXXXX"
+                type="tel"
+                value={clientLoginPhone}
+                onChange={(e) => setClientLoginPhone(e.target.value.replace(/\D/g, ''))}
+                className="h-11 rounded-lg"
+                onKeyDown={(e) => e.key === 'Enter' && handleClientLogin()}
+              />
+              <p className="text-xs text-gray-400">No necesitas PIN, solo tu teléfono</p>
+            </div>
+
+            {clientLoginError && (
+              <motion.div
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg"
+              >
+                {clientLoginError}
+              </motion.div>
+            )}
+
+            <Button
+              className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg"
+              onClick={handleClientLogin}
+              disabled={!clientLoginPhone}
+            >
+              Entrar
+            </Button>
+          </div>
+
+          <div className="text-center">
+            <p className="text-sm text-gray-500">¿No tienes cuenta?</p>
+            <button
+              className="text-sm text-blue-600 hover:text-blue-700 font-medium mt-1"
+              onClick={() => setView('clientRegister')}
+            >
+              Regístrate aquí
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    </motion.div>
+  )
+
+  // ===========================
+  // CLIENT REGISTER VIEW
+  // ===========================
+  const renderClientRegister = () => (
+    <motion.div variants={fadeVariants} initial="initial" animate="animate" exit="exit" className="flex flex-col min-h-[calc(100vh-4rem)]">
+      {/* Header */}
+      <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b px-4 py-3 flex items-center gap-3">
+        <Button variant="ghost" size="icon" className="shrink-0" onClick={goBack}>
+          <ArrowLeft size={20} />
+        </Button>
+        <h1 className="text-lg font-bold text-gray-900">Registrarse como Cliente</h1>
+      </div>
+
+      <div className="flex-1 flex flex-col items-center justify-center px-4 py-8">
+        <motion.div
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ duration: 0.4 }}
+          className="w-full max-w-sm space-y-6"
+        >
+          <div className="text-center">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 shadow-lg mb-4">
+              <User className="text-white" size={32} />
+            </div>
+            <h2 className="text-xl font-bold text-gray-900">Crear Cuenta</h2>
+            <p className="text-sm text-gray-500 mt-1">Solo necesitas nombre y teléfono</p>
+          </div>
+
+          <div className="space-y-4 bg-white p-6 rounded-2xl shadow-sm border">
+            {/* Profile photo */}
+            <div className="flex justify-center mb-2">
+              <div className="relative">
+                {clientRegisterPhoto ? (
+                  <div className="relative">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={clientRegisterPhoto} alt="Foto" className="w-20 h-20 rounded-full object-cover border-3 border-blue-200" />
+                    <button
+                      className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center shadow-sm"
+                      onClick={() => setClientRegisterPhoto(null)}
+                    >
+                      <X size={14} className="text-white" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="w-20 h-20 rounded-full bg-gray-100 flex items-center justify-center border-2 border-dashed border-gray-300">
+                    <User className="text-gray-400" size={32} />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-center">
+              <label className="cursor-pointer">
+                <Input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0]
+                    if (file) {
+                      try { setClientRegisterPhoto(await fileToBase64(file)) } catch { /* ignore */ }
+                    }
+                  }}
+                />
+                <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-50 text-blue-700 text-sm font-medium hover:bg-blue-100 transition-colors">
+                  <Camera size={16} />
+                  {clientRegisterPhoto ? 'Cambiar foto' : 'Subir foto (opcional)'}
+                </div>
+              </label>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-700">Tu nombre *</Label>
+              <Input
+                placeholder="Ej: María"
+                value={clientRegisterForm.name}
+                onChange={(e) => setClientRegisterForm({ ...clientRegisterForm, name: e.target.value })}
+                className="h-11 rounded-lg"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-700">Tu teléfono *</Label>
+              <Input
+                placeholder="5XXXXXXX"
+                type="tel"
+                value={clientRegisterForm.phone}
+                onChange={(e) => setClientRegisterForm({ ...clientRegisterForm, phone: e.target.value.replace(/\D/g, '') })}
+                className="h-11 rounded-lg"
+                onKeyDown={(e) => e.key === 'Enter' && handleClientRegister()}
+              />
+              <p className="text-xs text-gray-400">Si ya existe una cuenta con este teléfono, se iniciará sesión automáticamente</p>
+            </div>
+
+            <Button
+              className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg"
+              onClick={handleClientRegister}
+              disabled={!clientRegisterForm.name.trim() || !clientRegisterForm.phone.trim() || clientRegistering}
+            >
+              {clientRegistering ? (
+                <div className="animate-spin rounded-full h-5 w-5 border-2 border-current border-t-transparent" />
+              ) : (
+                'Registrarme'
+              )}
+            </Button>
+          </div>
+
+          <div className="text-center">
+            <button
+              className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+              onClick={() => setView('clientLogin')}
+            >
+              Ya tengo cuenta — Entrar
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    </motion.div>
+  )
+
+  // ===========================
+  // CLIENT PANEL VIEW
+  // ===========================
+  const renderClientPanel = () => {
+    if (!currentClient) {
+      setView('clientLogin')
+      return null
+    }
+
+    // Find shared locations for this client
+    const myLocations = sharedLocations.filter(
+      (loc) => loc.clientName === currentClient.name
+    )
+
+    return (
+      <motion.div variants={fadeVariants} initial="initial" animate="animate" exit="exit" className="flex flex-col min-h-[calc(100vh-4rem)]">
+        {/* Header */}
+        <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b px-4 py-3 flex items-center gap-3">
+          <Button variant="ghost" size="icon" className="shrink-0" onClick={() => setView('welcome')}>
+            <ArrowLeft size={20} />
+          </Button>
+          <div className="flex-1">
+            <h1 className="text-lg font-bold text-gray-900">Mi Perfil</h1>
+            <p className="text-xs text-gray-500">Cliente</p>
+          </div>
+          <Button variant="ghost" size="icon" onClick={handleClientLogout} className="text-red-500 hover:text-red-600 hover:bg-red-50">
+            <LogOut size={20} />
+          </Button>
+        </div>
+
+        <ScrollArea className="flex-1 px-4 py-6">
+          <div className="max-w-md mx-auto space-y-6">
+            {/* Profile card */}
+            <Card className="p-4 border-0 shadow-md" style={{ gap: 0 }}>
+              <div className="flex items-center gap-4">
+                <Avatar style={{ width: 56, height: 56, minWidth: 56 }} className="rounded-full">
+                  <AvatarImage src={currentClient.photo || undefined} alt={currentClient.name} />
+                  <AvatarFallback style={{ backgroundColor: '#2563eb' }} className="text-white font-semibold text-lg">
+                    {currentClient.name.charAt(0).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1">
+                  <h2 className="text-lg font-bold text-gray-900">{currentClient.name}</h2>
+                  <p className="text-sm text-gray-500">{formatPhone(currentClient.phone)}</p>
+                  <Badge className="mt-1 text-xs px-2 py-0 text-white border-0 rounded bg-blue-600">
+                    <User size={12} className="mr-1" />
+                    Cliente
+                  </Badge>
+                </div>
+              </div>
+            </Card>
+
+            {/* Quick actions */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Acciones</h3>
+
+              <Card
+                className="cursor-pointer p-4 hover:shadow-md transition-shadow border-0 bg-white shadow-sm"
+                style={{ gap: 0 }}
+                onClick={() => setView('map')}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center">
+                    <MapPin className="text-green-600" size={18} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-gray-800 text-sm">Ver Mapa</p>
+                    <p className="text-xs text-gray-500">Encuentra servicios cerca de ti</p>
+                  </div>
+                  <ChevronRight size={18} className="text-gray-400" />
+                </div>
+              </Card>
+
+              <Card
+                className="cursor-pointer p-4 hover:shadow-md transition-shadow border-0 bg-white shadow-sm"
+                style={{ gap: 0 }}
+                onClick={() => setView('forums')}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center">
+                    <Users className="text-orange-600" size={18} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-gray-800 text-sm">Comunidad</p>
+                    <p className="text-xs text-gray-500">Foros comunitarios</p>
+                  </div>
+                  <ChevronRight size={18} className="text-gray-400" />
+                </div>
+              </Card>
+            </div>
+
+            {/* Shared locations history */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Ubicaciones compartidas</h3>
+              {myLocations.length === 0 ? (
+                <Card className="p-4 border-0 bg-white shadow-sm" style={{ gap: 0 }}>
+                  <p className="text-sm text-gray-500 text-center">No has compartido ubicaciones todavía</p>
+                  <p className="text-xs text-gray-400 text-center mt-1">Usa el botón "Compartir ubicación" en el mapa</p>
+                </Card>
+              ) : (
+                <div className="space-y-2">
+                  {myLocations.slice(0, 10).map((loc) => (
+                    <Card key={loc.id} className="p-3 border-0 bg-white shadow-sm" style={{ gap: 0 }}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+                          <MapPin size={16} className="text-blue-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-800">{loc.address || 'Ubicación compartida'}</p>
+                          <p className="text-xs text-gray-400">{timeAgo(loc.createdAt)}</p>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </ScrollArea>
+      </motion.div>
+    )
+  }
+
+  // ===========================
   // MAP VIEW (PREMISA PRINCIPAL)
   // ===========================
   const renderMap = () => (
@@ -2535,7 +2979,7 @@ export default function ChambitaPage() {
         vehicleTypes={VEHICLE_TYPES}
         onProviderClick={goProfile}
         onShareLocation={(providerId) => {
-          setShareLocationOpen(true)
+          openShareLocation(providerId)
         }}
         filterCategory={filterCategory}
         availableOnly={availableOnly}
@@ -2567,7 +3011,7 @@ export default function ChambitaPage() {
                 Mi Panel
               </Button>
             )}
-            {!currentProvider && (
+            {!currentProvider && !currentClient && (
               <Button
                 variant="outline"
                 size="sm"
@@ -2576,6 +3020,17 @@ export default function ChambitaPage() {
               >
                 <Plus size={14} className="mr-1" />
                 Inscríbete
+              </Button>
+            )}
+            {!currentProvider && currentClient && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0 h-9 text-xs rounded-lg border-blue-200 text-blue-700 hover:bg-blue-50"
+                onClick={() => setView('clientPanel')}
+              >
+                <User size={14} className="mr-1" />
+                Mi Perfil
               </Button>
             )}
           </div>
@@ -2679,6 +3134,9 @@ export default function ChambitaPage() {
           {view === 'editprofile' && <div key="editprofile">{renderEditProfile()}</div>}
           {view === 'forums' && <div key="forums">{renderForums()}</div>}
           {view === 'forumDetail' && <div key="forumDetail">{renderForumDetail()}</div>}
+          {view === 'clientLogin' && <div key="clientLogin">{renderClientLogin()}</div>}
+          {view === 'clientRegister' && <div key="clientRegister">{renderClientRegister()}</div>}
+          {view === 'clientPanel' && <div key="clientPanel">{renderClientPanel()}</div>}
         </AnimatePresence>
       </main>
 
