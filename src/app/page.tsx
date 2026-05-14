@@ -41,9 +41,12 @@ export const CATEGORIES: Record<string, { label: string; emoji: string; color: s
   pasaje: { label: 'Pasaje', emoji: '🚗', color: '#ea580c', desc: 'Transporte de pasajeros' },
   carga: { label: 'Carga', emoji: '🚚', color: '#7c3aed', desc: 'Transporte de carga y mudanzas' },
   comida: { label: 'Comida', emoji: '🍕', color: '#dc2626', desc: 'Carros de comida y snacks' },
-  barbero: { label: 'Barbería', emoji: '💈', color: '#2563eb', desc: 'Barberos y peluqueros itinerantes' },
-  mecanico: { label: 'Mecánica', emoji: '🔧', color: '#ca8a04', desc: 'Servicios mecánicos móviles' },
-  fregador: { label: 'Limpieza', emoji: '🧹', color: '#16a34a', desc: 'Servicios de limpieza y fregado' },
+  barbero: { label: 'Barberos', emoji: '💈', color: '#2563eb', desc: 'Barberos y peluqueros itinerantes' },
+  fregador: { label: 'Fregado', emoji: '🧹', color: '#16a34a', desc: 'Carros de fregado y limpieza' },
+  recreativo: { label: 'Carros Recreativos', emoji: '🚘', color: '#e11d48', desc: 'Carros recreativos y de paseo' },
+  bote: { label: 'Botes Recreativos', emoji: '⛵', color: '#0891b2', desc: 'Botes recreativos y acuáticos' },
+  mascotas: { label: 'Mascotas', emoji: '🐕', color: '#d97706', desc: 'Transporte y cuidado de mascotas' },
+  cerrajeria: { label: 'Llaves', emoji: '🔑', color: '#6d28d9', desc: 'Mecánicos de llaves y cerrajería' },
 }
 
 export const VEHICLE_TYPES: Record<string, string> = {
@@ -54,6 +57,9 @@ export const VEHICLE_TYPES: Record<string, string> = {
   almendron: 'Almendrón',
   camion_mediano: 'Camión Mediano',
   camion_grande: 'Camión Grande',
+  carro_recreativo: 'Carro Recreativo',
+  bote_recreativo: 'Bote Recreativo',
+  carro_mascotas: 'Carro de Mascotas',
 }
 
 export const CATEGORY_VEHICLES: Record<string, string[]> = {
@@ -61,8 +67,11 @@ export const CATEGORY_VEHICLES: Record<string, string[]> = {
   carga: ['camion_mediano', 'camion_grande', 'triciclo', 'carro_moderno'],
   comida: ['triciclo', 'carro_moderno', 'carro_ruso'],
   barbero: [],
-  mecanico: ['carro_moderno', 'triciclo'],
   fregador: ['triciclo', 'carro_moderno', 'bicitaxi'],
+  recreativo: ['carro_recreativo', 'carro_moderno'],
+  bote: ['bote_recreativo'],
+  mascotas: ['carro_mascotas', 'carro_moderno'],
+  cerrajeria: [],
 }
 
 const TRUST_BADGES = [
@@ -736,7 +745,7 @@ export default function ChambitaPage() {
       {/* Category Grid */}
       <div className="px-4">
         <h2 className="text-lg font-semibold text-gray-800 mb-3">¿Qué necesitas?</h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           {Object.entries(CATEGORIES).map(([key, cat]) => (
             <motion.div key={key} variants={staggerItem}>
               <Card
@@ -749,9 +758,9 @@ export default function ChambitaPage() {
                   style={{ backgroundColor: cat.color }}
                 />
                 <CardContent className="p-4 flex flex-col items-center text-center gap-2">
-                  <span className="text-3xl group-hover:scale-110 transition-transform">{cat.emoji}</span>
-                  <span className="font-semibold text-gray-800 text-sm">{cat.label}</span>
-                  <span className="text-xs text-gray-500 leading-tight">{cat.desc}</span>
+                  <span className="text-2xl md:text-3xl group-hover:scale-110 transition-transform">{cat.emoji}</span>
+                  <span className="font-semibold text-gray-800 text-xs md:text-sm">{cat.label}</span>
+                  <span className="text-[10px] md:text-xs text-gray-500 leading-tight hidden md:block">{cat.desc}</span>
                 </CardContent>
               </Card>
             </motion.div>
