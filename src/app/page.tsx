@@ -788,10 +788,28 @@ export default function ChambitaPage() {
   // File to base64 helper
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(reader.result as string)
-      reader.onerror = reject
-      reader.readAsDataURL(file)
+      // Compress image before converting to base64 (max 400px, quality 70)
+      const img = new Image()
+      const canvas = document.createElement('canvas')
+      const MAX_SIZE = 400
+      const QUALITY = 0.7
+
+      img.onload = () => {
+        let w = img.width
+        let h = img.height
+        if (w > MAX_SIZE || h > MAX_SIZE) {
+          if (w > h) { h = (h * MAX_SIZE) / w; w = MAX_SIZE }
+          else { w = (w * MAX_SIZE) / h; h = MAX_SIZE }
+        }
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        if (!ctx) { reject(new Error('No canvas context')); return }
+        ctx.drawImage(img, 0, 0, w, h)
+        resolve(canvas.toDataURL('image/jpeg', QUALITY))
+      }
+      img.onerror = reject
+      img.src = URL.createObjectURL(file)
     })
   }
 

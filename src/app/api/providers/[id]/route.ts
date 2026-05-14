@@ -60,9 +60,18 @@ export async function PUT(
       'route3From', 'route3To', 'route3FromLat', 'route3FromLng', 'route3ToLat', 'route3ToLng',
     ]
 
+    // Photo fields should NOT be trimmed (they are base64)
+    const photoFields = ['photo', 'carPhoto1', 'carPhoto2', 'carPhoto3']
+
     for (const field of allowedFields) {
       if (updateData[field] !== undefined) {
-        clean[field] = typeof updateData[field] === 'string' ? (updateData[field] as string).trim() || null : updateData[field]
+        if (photoFields.includes(field)) {
+          // For photos: empty string → null, otherwise keep as-is
+          const val = updateData[field]
+          clean[field] = (typeof val === 'string' && val.trim() === '') ? null : val
+        } else {
+          clean[field] = typeof updateData[field] === 'string' ? (updateData[field] as string).trim() || null : updateData[field]
+        }
       }
     }
 
