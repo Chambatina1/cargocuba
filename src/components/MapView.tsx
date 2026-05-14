@@ -80,8 +80,9 @@ export default function MapView({
       return
     }
 
-    const center = (userLat && userLng) ? [userLat, userLng] as [number, number] : DEFAULT_CENTER
-    const zoom = (userLat && userLng) ? 13 : DEFAULT_ZOOM
+    // ALWAYS start with Cuba + Florida view
+    const center = DEFAULT_CENTER
+    const zoom = DEFAULT_ZOOM
 
     const map = L.map(containerRef.current, {
       zoomControl: false,
@@ -162,14 +163,36 @@ export default function MapView({
       markersRef.current.push(marker)
     })
 
-    // Fit bounds to show all markers or center Cuba+Florida
-    if (markersRef.current.length > 0) {
-      const points = markersRef.current.map((m: any) => m.getLatLng())
-      if (userLat && userLng) points.push(L.latLng(userLat, userLng))
-      try {
-        map.fitBounds(L.latLngBounds(points), { padding: [50, 50], maxZoom: 12 })
-      } catch { /* ignore */ }
+    // User location marker (blue pulsing dot)
+    if (userLat && userLng) {
+      const userIcon = L.divIcon({
+        html: `<div style="position:relative;width:20px;height:20px;">
+          <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:14px;height:14px;background:#3b82f6;border:3px solid white;border-radius:50%;box-shadow:0 2px 6px rgba(59,130,246,0.5);z-index:2;"></div>
+          <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:20px;height:20px;background:rgba(59,130,246,0.25);border-radius:50%;animation:userpulse 2s infinite;"></div>
+          <style>@keyframes userpulse{0%,100%{transform:translate(-50%,-50%) scale(1);opacity:0.7}50%{transform:translate(-50%,-50%) scale(1.8);opacity:0}}</style>
+        </div>`,
+        className: '',
+        iconSize: [20, 20],
+        iconAnchor: [10, 10],
+      })
+      const userMarker = L.marker([userLat, userLng], { icon: userIcon, zIndexOffset: 1000 }).addTo(map)
+      markersRef.current.push(userMarker)
     }
+
+    // Fit bounds to show ALL markers + Cuba+Florida region
+    // Add Cuba+Florida corners to ensure the full region is visible
+    const cubaFL = [
+      L.latLng(21.0, -85.5), // Western Cuba
+      L.latLng(23.5, -74.0), // Eastern Cuba
+      L.latLng(30.5, -87.5), // NW Florida
+      L.latLng(25.0, -80.0), // SE Florida / Miami
+    ]
+    const points = [...cubaFL]
+    markersRef.current.forEach((m: any) => points.push(m.getLatLng()))
+    if (userLat && userLng) points.push(L.latLng(userLat, userLng))
+    try {
+      map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 8 })
+    } catch { /* ignore */ }
   }, [providers, filterCategory, availableOnly, categories, vehicleTypes, userLat, userLng])
 
   // Init map
@@ -185,10 +208,10 @@ export default function MapView({
     if (mapRef.current && (window as any).L) updateMarkers((window as any).L)
   }, [providers, filterCategory, availableOnly, updateMarkers])
 
-  // Update center on user location change (only first time)
+  // Update markers when user location changes (don't re-center, just add user marker)
   useEffect(() => {
     if (mapRef.current && userLat && userLng && (window as any).L) {
-      mapRef.current.setView([userLat, userLng], 13)
+      updateMarkers((window as any).L)
     }
   }, [userLat, userLng])
 
