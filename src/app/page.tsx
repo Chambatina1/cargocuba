@@ -109,6 +109,18 @@ function formatPhone(phone: string): string {
   return `+53${cleaned}`
 }
 
+function getDistanceKm(lat1: number, lng1: number, lat2: number, lng2: number): string {
+  const R = 6371
+  const dLat = ((lat2 - lat1) * Math.PI) / 180
+  const dLng = ((lng2 - lng1) * Math.PI) / 180
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  const km = R * c
+  if (km < 1) return `${Math.round(km * 1000)} m`
+  if (km < 10) return `${km.toFixed(1)} km`
+  return `${Math.round(km)} km`
+}
+
 // =============================================
 // TYPES
 // =============================================
@@ -220,6 +232,13 @@ export default function ChambitaPage() {
   const [currentProvider, setCurrentProvider] = useState<Provider | null>(null)
   const [currentToken, setCurrentToken] = useState<string | null>(null)
 
+  // ---- Geolocation state (PREMISA OBLIGATORIA) ----
+  const [userLat, setUserLat] = useState<number | null>(null)
+  const [userLng, setUserLng] = useState<number | null>(null)
+  const [geoError, setGeoError] = useState<string | null>(null)
+  const [geoLoading, setGeoLoading] = useState(true)
+  const watchIdRef = useRef<number | null>(null)
+
   // ---- Data state ----
   const [providers, setProviders] = useState<Provider[]>([])
   const [providerDetail, setProviderDetail] = useState<Provider | null>(null)
@@ -302,6 +321,69 @@ export default function ChambitaPage() {
     fetch('/api/forums/seed', { method: 'POST' }).catch(() => {})
   }, [])
 
+  // ---- GEOLOCATION ACTIVA (PREMISA OBLIGATORIA) ----
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      setGeoError('Tu navegador no soporta geolocalización')
+      setGeoLoading(false)
+      // Fallback: La Habana
+      setUserLat(23.1136)
+      setUserLng(-82.3666)
+      return
+    }
+
+    // Primera lectura rápida
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserLat(pos.coords.latitude)
+        setUserLng(pos.coords.longitude)
+        setGeoError(null)
+        setGeoLoading(false)
+      },
+      (err) => {
+        // Si el usuario deniega permiso, usar fallback
+        setUserLat(23.1136)
+        setUserLng(-82.3666)
+        setGeoError('Ubicación aproximada (activa GPS para mejor experiencia)')
+        setGeoLoading(false)
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    )
+
+    // Watch continuo para tracking en tiempo real
+    const id = navigator.geolocation.watchPosition(
+      (pos) => {
+        setUserLat(pos.coords.latitude)
+        setUserLng(pos.coords.longitude)
+        setGeoError(null)
+
+        // Si es proveedor y está live, actualizar ubicación en servidor
+        if (currentProvider?.available && currentToken) {
+          fetch(`/api/providers/${currentProvider.id}/toggle-live`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              token: currentToken,
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+              _updateOnly: true,
+            }),
+          }).catch(() => {})
+        }
+      },
+      () => {},
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+    )
+
+    watchIdRef.current = id
+
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current)
+      }
+    }
+  }, [currentProvider?.available, currentProvider?.id, currentToken])
+
   // ---- Auto-scroll chat ----
   useEffect(() => {
     setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
@@ -339,14 +421,27 @@ export default function ChambitaPage() {
       if (category && category !== 'all') params.set('category', category)
       if (onlyAvailable) params.set('available', 'true')
       if (search) params.set('search', search)
-      const res = await fetch(`/api/providers?${params.toString()}`)
+      // Geolocalización: siempre enviar posición del usuario
+      if (userLat != null && userLng != null) {
+        params.set('lat', String(userLat))
+        params.set('lng', String(userLng))
+      }
+      const res = await fetch(`/api/providers/nearby?${params.toString()}`)
       if (res.ok) {
         const data = await res.json()
+        // Ordenar por distancia
+        if (userLat != null && userLng != null && Array.isArray(data)) {
+          data.sort((a: Provider, b: Provider) => {
+            const dA = Math.sqrt(Math.pow((a.lat || 0) - userLat, 2) + Math.pow((a.lng || 0) - userLng, 2))
+            const dB = Math.sqrt(Math.pow((b.lat || 0) - userLat, 2) + Math.pow((b.lng || 0) - userLng, 2))
+            return dA - dB
+          })
+        }
         setProviders(data)
       }
     } catch { /* ignore */ }
     setLoading(false)
-  }, [])
+  }, [userLat, userLng])
 
   const fetchProviderDetail = useCallback(async (id: string) => {
     queueMicrotask(() => setLoading(true))
@@ -723,6 +818,25 @@ export default function ChambitaPage() {
         <p className="text-gray-500 mt-2 text-sm md:text-base">
           Tu plataforma de servicios móviles en Cuba
         </p>
+        {/* GPS Status Badge */}
+        <div className="mt-3 flex items-center justify-center gap-2">
+          {geoLoading ? (
+            <Badge variant="outline" className="gap-1.5 px-3 py-1 text-xs border-yellow-300 bg-yellow-50 text-yellow-700">
+              <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
+              Obteniendo ubicación GPS...
+            </Badge>
+          ) : geoError ? (
+            <Badge variant="outline" className="gap-1.5 px-3 py-1 text-xs border-orange-300 bg-orange-50 text-orange-600">
+              <MapPin size={12} />
+              {geoError}
+            </Badge>
+          ) : userLat != null ? (
+            <Badge variant="outline" className="gap-1.5 px-3 py-1 text-xs border-green-300 bg-green-50 text-green-700">
+              <span className="w-2 h-2 rounded-full bg-green-500" />
+              GPS Activo — {userLat.toFixed(4)}, {userLng.toFixed(4)}
+            </Badge>
+          ) : null}
+        </div>
       </div>
 
       {/* Search Bar */}
@@ -951,6 +1065,13 @@ export default function ChambitaPage() {
                           </Badge>
                         )}
                       </div>
+                      {/* Distancia GPS */}
+                      {userLat != null && userLng != null && p.lat != null && p.lng != null && (
+                        <div className="flex items-center gap-1 mt-1 text-[11px] text-blue-600 font-medium">
+                          <MapPin size={11} />
+                          {getDistanceKm(userLat, userLng, p.lat, p.lng)}
+                        </div>
+                      )}
                     </div>
                   </div>
 

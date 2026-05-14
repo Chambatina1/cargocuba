@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
-// GET /api/providers/nearby - Get providers near a location
+// GET /api/providers/nearby - Get providers near a location (GEOLOCATION PREMISA)
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
     const lat = parseFloat(searchParams.get('lat') || '23.1136')
     const lng = parseFloat(searchParams.get('lng') || '-82.3666')
-    const radius = parseFloat(searchParams.get('radius') || '50000') // 50km default
+    const radius = parseFloat(searchParams.get('radius') || '100000') // 100km default (Cuba entera)
     const category = searchParams.get('category')
+    const available = searchParams.get('available')
+    const search = searchParams.get('search')
 
     const where: Record<string, unknown> = {
       active: true,
@@ -18,14 +20,24 @@ export async function GET(req: NextRequest) {
     if (category && category !== 'all') {
       where.serviceCategory = category
     }
+    if (available === 'true') {
+      where.available = true
+    }
+    if (search) {
+      where.OR = [
+        { name: { contains: search } },
+        { businessName: { contains: search } },
+        { phone: { contains: search } },
+      ]
+    }
 
     const providers = await db.provider.findMany({
-      where,
+      where: Object.keys(where).length > 1 || where.OR ? where : { active: true, suspended: false },
     })
 
-    // Filter by distance using Haversine
+    // Filter and sort by distance using Haversine
     const R = 6371000 // Earth radius in meters
-    const nearby = providers.filter((p) => {
+    const withDistance = providers.map((p) => {
       const dLat = ((p.lat - lat) * Math.PI) / 180
       const dLng = ((p.lng - lng) * Math.PI) / 180
       const a =
@@ -36,8 +48,13 @@ export async function GET(req: NextRequest) {
           Math.sin(dLng / 2)
       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
       const distance = R * c
-      return distance <= radius
+      return { ...p, distanceKm: Math.round(distance / 10) / 100 }
     })
+
+    // Filter by radius and sort by distance
+    const nearby = withDistance
+      .filter((p) => p.distanceKm <= radius / 1000)
+      .sort((a, b) => a.distanceKm - b.distanceKm)
 
     return NextResponse.json(nearby)
   } catch (error: unknown) {
