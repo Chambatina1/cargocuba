@@ -48,6 +48,7 @@ interface MapViewProps {
   vehicleTypes?: Record<string, string>
   onProviderClick: (id: string) => void
   onShareLocation?: (providerId: string) => void
+  onPhotoClick?: (src: string) => void
   filterCategory: string | null
   availableOnly: boolean
   sharedLocations?: SharedLocationItem[]
@@ -71,7 +72,7 @@ function loadLeafletScript(): Promise<void> {
 
 export default function MapView({
   userLat, userLng, providers, categories, vehicleTypes,
-  onProviderClick, onShareLocation, filterCategory, availableOnly,
+  onProviderClick, onShareLocation, onPhotoClick, filterCategory, availableOnly,
   sharedLocations = [],
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -537,7 +538,10 @@ export default function MapView({
                         borderRadius: 12,
                         overflow: 'hidden',
                         backgroundColor: '#f3f4f6',
-                      }}>
+                        cursor: 'pointer',
+                      }}
+                        onClick={() => onPhotoClick?.(photo)}
+                      >
                         <img
                           src={photo || ''}
                           alt={`Foto ${i + 1}`}

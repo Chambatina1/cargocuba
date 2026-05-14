@@ -340,6 +340,10 @@ export default function ChambitaPage() {
   const [sharingLocation, setSharingLocation] = useState(false)
 
   const chatEndRef = useRef<HTMLDivElement>(null)
+  const chatPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // ---- Lightbox state ----
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
 
   // ---- Load session from localStorage (lazy init avoids set-state-in-effect) ----
   const sessionRef = useRef<{ provider: Provider | null; token: string | null }>({ provider: null, token: null })
@@ -620,8 +624,41 @@ export default function ChambitaPage() {
         setMessages(data)
       }
     } catch { /* ignore */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentClient])
+
+  // ---- Real-time chat polling (every 3s when chat is open) ----
+  useEffect(() => {
+    if (chatOpen && chatTarget) {
+      const clientId = currentClient?.id || 'guest'
+      chatPollRef.current = setInterval(() => {
+        fetchMessages(chatTarget.id, clientId)
+      }, 3000)
+    } else {
+      if (chatPollRef.current) {
+        clearInterval(chatPollRef.current)
+        chatPollRef.current = null
+      }
+    }
+    return () => {
+      if (chatPollRef.current) {
+        clearInterval(chatPollRef.current)
+        chatPollRef.current = null
+      }
+    }
+  }, [chatOpen, chatTarget, currentClient, fetchMessages])
+
+  // ---- Fix setView during render: redirect from mypanel/clientPanel if not authenticated ----
+  useEffect(() => {
+    if (view === 'mypanel' && !currentProvider) setView('login')
+  }, [view, currentProvider])
+
+  useEffect(() => {
+    if (view === 'editprofile' && !currentProvider) setView('login')
+  }, [view, currentProvider])
+
+  useEffect(() => {
+    if (view === 'clientPanel' && !currentClient) setView('clientLogin')
+  }, [view, currentClient])
 
   // ---- Load data on view change ----
   useEffect(() => {
@@ -847,7 +884,7 @@ export default function ChambitaPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           targetType: 'provider', targetId: providerDetail.id,
-          reviewerType: 'client', reviewerId: 'guest',
+          reviewerType: 'client', reviewerId: currentClient?.id || 'guest',
           rating: reviewRating, comment: reviewComment,
           ...reviewBadges,
         }),
@@ -1150,14 +1187,14 @@ export default function ChambitaPage() {
         </div>
       </div>
 
-      {/* CTA Buttons - MAPA ES PRIMARIO */}
+      {/* CTA Buttons - SIMPLIFIED */}
       <div className="px-4 flex flex-col gap-3">
         <Button
           className="h-14 text-lg rounded-xl font-bold bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-200"
           onClick={() => setView('map')}
         >
           <MapPin className="mr-2" size={22} />
-          Ver Mapa — Servicios Cerca de Mí
+          Buscar Servicios
         </Button>
         <div className="flex gap-3">
           <Button
@@ -1178,23 +1215,21 @@ export default function ChambitaPage() {
             Soy Proveedor
           </Button>
         </div>
-        <div className="flex gap-3">
-          <Button
-            variant="outline"
-            className="flex-1 h-11 rounded-xl border-orange-200 text-orange-700 hover:bg-orange-50"
+        {/* Subtle text links for secondary actions */}
+        <div className="flex items-center justify-center gap-4 pt-1">
+          <button
+            className="text-sm text-orange-600 hover:text-orange-700 font-medium"
             onClick={() => setView('login')}
           >
-            <User className="mr-2" size={16} />
             Iniciar Sesión
-          </Button>
-          <Button
-            variant="outline"
-            className="flex-1 h-11 rounded-xl border-gray-200 hover:bg-gray-50"
+          </button>
+          <span className="text-gray-300">|</span>
+          <button
+            className="text-sm text-gray-500 hover:text-gray-700 font-medium"
             onClick={() => setView('forums')}
           >
-            <Users className="mr-2" size={16} />
             Comunidad
-          </Button>
+          </button>
         </div>
       </div>
 
@@ -1288,6 +1323,20 @@ export default function ChambitaPage() {
 
       {/* Provider List */}
       <div className="flex-1 p-4">
+        {/* Pull-to-refresh visual hint */}
+        {loading && (
+          <div className="flex items-center justify-center py-2 mb-2">
+            <div className="flex items-center gap-2 text-sm text-gray-400">
+              <div className="animate-spin rounded-full h-4 w-4 border-2 border-orange-400 border-t-transparent" />
+              Actualizando...
+            </div>
+          </div>
+        )}
+        {!loading && providers.length > 0 && (
+          <div className="flex items-center justify-center py-1 mb-2">
+            <span className="text-[11px] text-gray-300">Desliza para actualizar</span>
+          </div>
+        )}
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {[1, 2, 3].map((i) => (
@@ -1579,7 +1628,7 @@ export default function ChambitaPage() {
                     <h3 className="text-sm font-semibold text-gray-700 mb-2">Fotos</h3>
                     <div className="grid grid-cols-3 gap-2">
                       {photos.map((photo, i) => (
-                        <div key={i} className="aspect-square rounded-lg overflow-hidden bg-gray-100">
+                        <div key={i} className="aspect-square rounded-lg overflow-hidden bg-gray-100 cursor-pointer hover:opacity-90 transition-opacity" onClick={() => photo && setLightboxSrc(photo)}>
                           <img src={photo || ''} alt={`Foto ${i + 1}`} className="w-full h-full object-cover" />
                         </div>
                       ))}
@@ -1592,7 +1641,7 @@ export default function ChambitaPage() {
         </ScrollArea>
 
         {/* Sticky Action Buttons */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t p-3 z-20">
+        <div className="fixed bottom-16 left-0 right-0 bg-white/95 backdrop-blur-md border-t p-3 z-20" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
           <div className="flex gap-2 max-w-lg mx-auto">
             <Button
               className="flex-1 h-12 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl"
@@ -2021,7 +2070,6 @@ export default function ChambitaPage() {
   // ===========================
   const renderMyPanel = () => {
     if (!currentProvider) {
-      setView('login')
       return null
     }
 
@@ -2235,7 +2283,6 @@ export default function ChambitaPage() {
   // ===========================
   const renderEditProfile = () => {
     if (!currentProvider) {
-      setView('login')
       return null
     }
 
@@ -2847,7 +2894,6 @@ export default function ChambitaPage() {
   // ===========================
   const renderClientPanel = () => {
     if (!currentClient) {
-      setView('clientLogin')
       return null
     }
 
@@ -2969,7 +3015,7 @@ export default function ChambitaPage() {
   // MAP VIEW (PREMISA PRINCIPAL)
   // ===========================
   const renderMap = () => (
-    <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999 }}>
+    <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100dvh', zIndex: 9999 }}>
       {/* Full-screen Map */}
       <MapView
         userLat={userLat}
@@ -2981,6 +3027,7 @@ export default function ChambitaPage() {
         onShareLocation={(providerId) => {
           openShareLocation(providerId)
         }}
+        onPhotoClick={(src) => setLightboxSrc(src)}
         filterCategory={filterCategory}
         availableOnly={availableOnly}
         sharedLocations={sharedLocations}
@@ -3035,6 +3082,22 @@ export default function ChambitaPage() {
             )}
           </div>
 
+          {/* Search input */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+            <Input
+              placeholder="Buscar proveedor..."
+              className="pl-9 h-9 text-sm rounded-xl"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  void fetchProviders(filterCategory, availableOnly, searchQuery || undefined)
+                }
+              }}
+            />
+          </div>
+
           {/* Category chips scrollable */}
           <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
             <Badge
@@ -3071,8 +3134,30 @@ export default function ChambitaPage() {
         </div>
       </div>
 
+      {/* Empty state overlay when no providers found */}
+      {!loading && providers.length === 0 && (
+        <div className="absolute inset-0 z-[5] flex items-center justify-center pointer-events-none">
+          <div className="pointer-events-auto bg-white/95 backdrop-blur-md rounded-2xl shadow-lg p-6 text-center max-w-xs mx-4">
+            <div className="text-5xl mb-3">😕</div>
+            <p className="font-semibold text-gray-800 text-base">No se encontraron proveedores</p>
+            <p className="text-sm text-gray-500 mt-1 mb-4">Intenta con otros filtros o busca en otra área</p>
+            <Button
+              variant="outline"
+              className="rounded-xl border-orange-200 text-orange-700 hover:bg-orange-50"
+              onClick={() => {
+                setSearchQuery('')
+                setFilterCategory(null)
+                setAvailableOnly(false)
+              }}
+            >
+              Limpiar filtros
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Floating Bottom: provider cards preview */}
-      <div className="absolute bottom-0 left-0 right-0 z-10 pb-4 px-3">
+      <div className="absolute bottom-16 left-0 right-0 z-10 pb-4 px-3">
         <div className="flex gap-3 overflow-x-auto scrollbar-none pb-2">
           {providers.filter(p => p.available || !availableOnly).slice(0, 8).map((p) => {
             const cat = CATEGORIES[p.serviceCategory]
@@ -3118,6 +3203,35 @@ export default function ChambitaPage() {
   // ===========================
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
+
+    {/* ===========================
+        IMAGE LIGHTBOX
+        =========================== */}
+    <AnimatePresence>
+      {lightboxSrc && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[10000] bg-black/90 flex items-center justify-center"
+          onClick={() => setLightboxSrc(null)}
+        >
+          <button
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-colors z-10"
+            onClick={() => setLightboxSrc(null)}
+          >
+            <X size={24} />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={lightboxSrc}
+            alt="Foto ampliada"
+            className="max-w-[90vw] max-h-[85vh] object-contain rounded-lg"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </motion.div>
+      )}
+    </AnimatePresence>
       {/* Floating Logo - siempre visible */}
       <FloatingLogo />
 
@@ -3139,6 +3253,73 @@ export default function ChambitaPage() {
           {view === 'clientPanel' && <div key="clientPanel">{renderClientPanel()}</div>}
         </AnimatePresence>
       </main>
+
+      {/* ===========================
+          BOTTOM NAVIGATION BAR
+          =========================== */}
+      {!['welcome', 'register', 'login', 'clientLogin', 'clientRegister', 'editprofile', 'forumDetail'].includes(view) && (
+        <nav
+          className="fixed bottom-0 left-0 right-0 z-[10000] bg-white border-t shadow-[0_-2px_10px_rgba(0,0,0,0.06)]"
+          style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+        >
+          <div className="flex items-center justify-around h-16 max-w-lg mx-auto px-2">
+            {/* Mapa tab */}
+            <button
+              className={cn(
+                'flex flex-col items-center justify-center gap-0.5 px-3 py-1 rounded-xl transition-colors min-w-[64px]',
+                ['map', 'profile', 'providers'].includes(view) ? 'text-orange-600' : 'text-gray-400 hover:text-gray-600'
+              )}
+              onClick={() => setView('map')}
+            >
+              <MapPin size={22} strokeWidth={2} />
+              <span className="text-[10px] font-semibold">Mapa</span>
+            </button>
+
+            {/* Mensajes tab */}
+            <button
+              className="flex flex-col items-center justify-center gap-0.5 px-3 py-1 rounded-xl transition-colors text-gray-400 hover:text-gray-600 min-w-[64px]"
+              onClick={() => {
+                if (chatTarget) {
+                  setChatOpen(true)
+                } else {
+                  toast.info('Selecciona un proveedor para chatear')
+                }
+              }}
+            >
+              <MessageCircle size={22} strokeWidth={2} />
+              <span className="text-[10px] font-semibold">Mensajes</span>
+            </button>
+
+            {/* Inicio tab */}
+            <button
+              className={cn(
+                'flex flex-col items-center justify-center gap-0.5 px-3 py-1 rounded-xl transition-colors min-w-[64px]',
+                view === 'forums' ? 'text-orange-600' : 'text-gray-400 hover:text-gray-600'
+              )}
+              onClick={() => setView('welcome')}
+            >
+              <Zap size={22} strokeWidth={2} />
+              <span className="text-[10px] font-semibold">Inicio</span>
+            </button>
+
+            {/* Perfil tab */}
+            <button
+              className={cn(
+                'flex flex-col items-center justify-center gap-0.5 px-3 py-1 rounded-xl transition-colors min-w-[64px]',
+                ['mypanel', 'clientPanel'].includes(view) ? 'text-orange-600' : 'text-gray-400 hover:text-gray-600'
+              )}
+              onClick={() => {
+                if (currentProvider) setView('mypanel')
+                else if (currentClient) setView('clientPanel')
+                else setView('login')
+              }}
+            >
+              <User size={22} strokeWidth={2} />
+              <span className="text-[10px] font-semibold">Perfil</span>
+            </button>
+          </div>
+        </nav>
+      )}
 
       {/* ===========================
           CHAT SHEET
