@@ -47,6 +47,7 @@ export const CATEGORIES: Record<string, { label: string; emoji: string; color: s
   bote: { label: 'Bote Recreativo', emoji: '⛵', color: '#0891b2', desc: 'Botes recreativos y acuáticos' },
   mascotas: { label: 'Automóvil de Mascotas', emoji: '🐕', color: '#d97706', desc: 'Transporte y cuidado de mascotas' },
   cerrajeria: { label: 'Automóvil de Llaves', emoji: '🔑', color: '#6d28d9', desc: 'Mecánicos de llaves y cerrajería' },
+  grua: { label: 'Grúas', emoji: '🏗️', color: '#be185d', desc: 'Servicio de grúas y remolque' },
 }
 
 export const VEHICLE_TYPES: Record<string, string> = {
@@ -60,6 +61,7 @@ export const VEHICLE_TYPES: Record<string, string> = {
   carro_recreativo: 'Carro Recreativo',
   bote_recreativo: 'Bote Recreativo',
   carro_mascotas: 'Carro de Mascotas',
+  grua: 'Grúa',
 }
 
 export const CATEGORY_VEHICLES: Record<string, string[]> = {
@@ -72,6 +74,7 @@ export const CATEGORY_VEHICLES: Record<string, string[]> = {
   bote: ['bote_recreativo'],
   mascotas: ['carro_mascotas', 'carro_moderno'],
   cerrajeria: [],
+  grua: ['grua'],
 }
 
 const TRUST_BADGES = [
@@ -745,7 +748,7 @@ export default function ChambitaPage() {
       {/* Category Grid */}
       <div className="px-4">
         <h2 className="text-lg font-semibold text-gray-800 mb-3">¿Qué necesitas?</h2>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
           {Object.entries(CATEGORIES).map(([key, cat]) => (
             <motion.div key={key} variants={staggerItem}>
               <Card
