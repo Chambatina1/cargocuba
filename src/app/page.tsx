@@ -2407,8 +2407,8 @@ export default function ChambitaPage() {
   // MAP VIEW (PREMISA PRINCIPAL)
   // ===========================
   const renderMap = () => (
-    <div className="fixed inset-0" style={{ zIndex: 50 }}>
-      {/* Full-screen Map - MapView renders its own container */}
+    <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999 }}>
+      {/* Full-screen Map */}
       <MapView
         userLat={userLat}
         userLng={userLng}
