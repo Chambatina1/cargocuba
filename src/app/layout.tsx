@@ -14,16 +14,16 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Chambita — Tu plataforma de servicios móviles en Cuba",
-  description: "Encuentra servicios móviles en Cuba: transporte de pasajeros, carga, comida, barbería, mecánica y limpieza. Conecta con proveedores cercanos.",
-  keywords: ["Cuba", "servicios móviles", "transporte", "pasaje", "carga", "comida", "barbería", "mecánica", "limpieza"],
+  title: "Chambita — Tu plataforma de servicios móviles",
+  description: "Encuentra servicios móviles cerca de ti: transporte de pasajeros, carga, comida, barbería, mecánica y limpieza. Conecta con proveedores en tu zona.",
+  keywords: ["servicios móviles", "transporte", "pasaje", "carga", "comida", "barbería", "mecánica", "limpieza", "mapa", "geolocalización"],
   authors: [{ name: "Chambita" }],
   icons: {
     icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
   },
   openGraph: {
-    title: "Chambita — Servicios Móviles en Cuba",
-    description: "Tu plataforma de servicios móviles en Cuba",
+    title: "Chambita — Servicios Móviles",
+    description: "Tu plataforma de servicios móviles con geolocalización en tiempo real",
     type: "website",
   },
 };

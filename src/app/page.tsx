@@ -344,8 +344,8 @@ export default function ChambitaPage() {
       setGeoError('Tu navegador no soporta geolocalización')
       setGeoLoading(false)
       // Fallback: La Habana
-      setUserLat(23.1136)
-      setUserLng(-82.3666)
+      setUserLat(null)
+      setUserLng(null)
       return
     }
 
@@ -359,9 +359,9 @@ export default function ChambitaPage() {
       },
       (err) => {
         // Si el usuario deniega permiso, usar fallback
-        setUserLat(23.1136)
-        setUserLng(-82.3666)
-        setGeoError('Ubicación aproximada (activa GPS para mejor experiencia)')
+        setUserLat(null)
+        setUserLng(null)
+        setGeoError('Activa tu ubicación para mejores resultados')
         setGeoLoading(false)
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
@@ -849,7 +849,7 @@ export default function ChambitaPage() {
           <span className="text-orange-600">Chambi</span>ta
         </h1>
         <p className="text-gray-500 mt-2 text-sm md:text-base">
-          Tu plataforma de servicios móviles en Cuba
+          Tu plataforma de servicios móviles
         </p>
         {/* GPS Status Badge */}
         <div className="mt-3 flex items-center justify-center gap-2">
@@ -866,7 +866,7 @@ export default function ChambitaPage() {
           ) : userLat != null ? (
             <Badge variant="outline" className="gap-1.5 px-3 py-1 text-xs border-green-300 bg-green-50 text-green-700">
               <span className="w-2 h-2 rounded-full bg-green-500" />
-              GPS Activo — {userLat.toFixed(4)}, {userLng.toFixed(4)}
+              GPS Activo
             </Badge>
           ) : null}
         </div>
@@ -2407,21 +2407,16 @@ export default function ChambitaPage() {
   // MAP VIEW (PREMISA PRINCIPAL)
   // ===========================
   const renderMap = () => (
-    <div className="fixed inset-0 z-0 flex flex-col" style={{ marginTop: 0 }}>
-      {/* Full-screen Map */}
-      <div id="chambita-map" className="flex-1 w-full" style={{ zIndex: 0 }} />
-
-      {/* MapView component handles Leaflet init */}
+    <div className="fixed inset-0" style={{ zIndex: 50 }}>
+      {/* Full-screen Map - MapView renders its own container */}
       <MapView
         userLat={userLat}
         userLng={userLng}
         providers={providers}
         categories={CATEGORIES}
         onProviderClick={goProfile}
-        onCategoryFilter={setFilterCategory}
         filterCategory={filterCategory}
         availableOnly={availableOnly}
-        onToggleAvailable={() => setAvailableOnly(!availableOnly)}
       />
 
       {/* Floating Top Bar */}

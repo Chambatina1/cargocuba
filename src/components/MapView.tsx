@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
@@ -33,81 +33,68 @@ interface MapViewProps {
   }>
   categories: Record<string, { label: string; emoji: string; color: string; desc: string }>
   onProviderClick: (id: string) => void
-  onCategoryFilter: (cat: string | null) => void
   filterCategory: string | null
   availableOnly: boolean
-  onToggleAvailable: () => void
 }
 
 export default function MapView({
   userLat, userLng, providers, categories,
-  onProviderClick, onCategoryFilter, filterCategory,
-  availableOnly, onToggleAvailable,
+  onProviderClick, filterCategory, availableOnly,
 }: MapViewProps) {
-  const [mapReady, setMapReady] = useState(false)
+  const mapRef = useRef<L.Map | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const markersRef = useRef<L.Marker[]>([])
 
-  // Initialize map
+  // Initialize map once
   useEffect(() => {
-    if (!mapReady) {
-      setMapReady(true)
-      // Small delay to ensure DOM is ready
-      const t = setTimeout(() => initMap(), 100)
-      return () => clearTimeout(t)
-    }
-  }, [mapReady])
-
-  // Update markers when providers change
-  useEffect(() => {
-    if (mapReady) {
-      setTimeout(() => updateMarkers(), 50)
-    }
-  }, [mapReady, providers, filterCategory])
-
-  const initMap = () => {
-    const mapEl = document.getElementById('chambita-map')
-    if (!mapEl || mapEl._leaflet_id) return
+    if (!containerRef.current || mapRef.current) return
 
     const center: L.LatLngExpression = userLat && userLng
       ? [userLat, userLng]
-      : [23.1136, -82.3666]
+      : [20, 0] // World view as default
 
-    const map = L.map(mapEl, {
+    const map = L.map(containerRef.current, {
       zoomControl: false,
       attributionControl: false,
-    }).setView(center, 13)
+    }).setView(center, userLat ? 13 : 2)
 
-    // Add zoom control to bottom-right
     L.control.zoom({ position: 'bottomright' }).addTo(map)
 
-    // Tile layer
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
     }).addTo(map)
 
-    // User location marker
-    if (userLat && userLng) {
-      const userIcon = L.divIcon({
-        html: `<div style="width:18px;height:18px;background:#3b82f6;border:3px solid white;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>`,
-        className: '',
-        iconSize: [18, 18],
-        iconAnchor: [9, 9],
-      })
-      L.marker([userLat, userLng], { icon: userIcon })
-        .addTo(map)
-        .bindPopup('<b>Tu ubicación</b>')
+    mapRef.current = map
+
+    // Handle profile navigation from popup
+    const handler = (e: CustomEvent) => {
+      onProviderClick(e.detail)
     }
+    document.addEventListener('chambita-goto-profile', handler as EventListener)
 
-    // Store map reference for marker updates
-    ;(mapEl as any)._chambitaMap = map
+    return () => {
+      document.removeEventListener('chambita-goto-profile', handler as EventListener)
+      map.remove()
+      mapRef.current = null
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-    // Initial markers
-    addMarkers(map)
-  }
+  // Update center when user location changes
+  useEffect(() => {
+    if (mapRef.current && userLat && userLng) {
+      mapRef.current.setView([userLat, userLng], 13)
+    }
+  }, [userLat, userLng])
 
-  const addMarkers = (map: L.Map) => {
-    // Clear existing markers
-    ;(map as any)._chambitaMarkers?.forEach((m: L.Marker) => map.removeLayer(m))
-    const markers: L.Marker[] = []
+  // Update markers when providers or filters change
+  useEffect(() => {
+    if (!mapRef.current) return
+    const map = mapRef.current
+
+    // Clear old markers
+    markersRef.current.forEach((m) => map.removeLayer(m))
+    markersRef.current = []
 
     providers.forEach((p) => {
       if (!p.lat || !p.lng) return
@@ -126,9 +113,9 @@ export default function MapView({
           box-shadow:0 2px 8px rgba(0,0,0,0.3);
           display:flex;align-items:center;justify-content:center;
           font-size:18px;
-          ${p.available ? 'animation:pulse 2s infinite;' : 'opacity:0.6;'}
+          ${p.available ? 'animation:mpulse 2s infinite;' : 'opacity:0.6;'}
         ">${emoji}</div>
-        <style>@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}</style>`,
+        <style>@keyframes mpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}</style>`,
         className: '',
         iconSize: [36, 36],
         iconAnchor: [18, 18],
@@ -147,43 +134,51 @@ export default function MapView({
           </div>
           <div style="font-size:12px;color:#555;margin-bottom:4px;">
             ${cat?.label || p.serviceCategory}
-            ${p.available ? ' • <span style="color:#16a34a;">● Disponible</span>' : ''}
+            ${p.available ? ' &bull; <span style="color:#16a34a;">Available</span>' : ''}
           </div>
-          ${p.rating ? `<div style="font-size:12px;">⭐ ${p.rating.toFixed(1)}</div>` : ''}
+          ${p.rating ? `<div style="font-size:12px;">&#11088; ${p.rating.toFixed(1)}</div>` : ''}
           <div style="display:flex;gap:6px;margin-top:8px;">
             <a href="tel:${p.phone}" style="
               display:inline-flex;align-items:center;gap:4px;
               padding:6px 12px;background:${color};color:white;
               border-radius:8px;text-decoration:none;font-size:12px;font-weight:600;
-            ">📞 Llamar</a>
+            ">&#128222; Call</a>
             <button onclick="document.dispatchEvent(new CustomEvent('chambita-goto-profile',{detail:'${p.id}'}))"
               style="
               display:inline-flex;align-items:center;gap:4px;
               padding:6px 12px;background:#f3f4f6;color:#374151;
               border:1px solid #e5e7eb;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;
-            ">Ver Perfil</button>
+            ">Profile</button>
           </div>
         </div>
       `, { maxWidth: 260 })
-      markers.push(marker)
+      markersRef.current.push(marker)
     })
 
-    ;(map as any)._chambitaMarkers = markers
-
-    // Listen for profile navigation events
-    const handler = (e: CustomEvent) => {
-      onProviderClick(e.detail)
+    // Fit bounds if there are markers and user location
+    if (markersRef.current.length > 0 && userLat && userLng) {
+      const bounds = L.latLngBounds(
+        markersRef.current.map((m) => m.getLatLng())
+      )
+      bounds.extend([userLat, userLng])
+      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 14 })
     }
-    document.addEventListener('chambita-goto-profile', handler as EventListener)
-    ;(map as any)._chambitaProfileHandler = handler
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [providers, filterCategory, availableOnly])
 
-  const updateMarkers = () => {
-    const mapEl = document.getElementById('chambita-map')
-    if (!mapEl) return
-    const map = (mapEl as any)._chambitaMap as L.Map | undefined
-    if (map) addMarkers(map)
-  }
-
-  return null // Map is created imperatively
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        width: '100%',
+        height: '100%',
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 1,
+      }}
+    />
+  )
 }
