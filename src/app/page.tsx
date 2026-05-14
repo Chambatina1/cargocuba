@@ -2414,6 +2414,7 @@ export default function ChambitaPage() {
         userLng={userLng}
         providers={providers}
         categories={CATEGORIES}
+        vehicleTypes={VEHICLE_TYPES}
         onProviderClick={goProfile}
         filterCategory={filterCategory}
         availableOnly={availableOnly}

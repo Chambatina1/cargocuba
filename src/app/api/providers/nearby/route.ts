@@ -7,7 +7,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const lat = parseFloat(searchParams.get('lat') || '23.1136')
     const lng = parseFloat(searchParams.get('lng') || '-82.3666')
-    const radius = parseFloat(searchParams.get('radius') || '100000') // 100km default (Cuba entera)
+    const radius = parseFloat(searchParams.get('radius') || '1500000') // 1500km default (Cuba + Florida + Caribe)
     const category = searchParams.get('category')
     const available = searchParams.get('available')
     const search = searchParams.get('search')
