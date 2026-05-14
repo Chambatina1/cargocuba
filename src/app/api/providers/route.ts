@@ -69,11 +69,15 @@ export async function POST(req: NextRequest) {
         serviceCategory: serviceCategory || 'pasaje',
         vehicleType: vehicleType || 'carro_moderno',
         businessName: businessName?.trim() || null,
+        photo: body.photo || null,
         bio: body.bio?.trim() || null,
         schedule: body.schedule?.trim() || null,
         priceRange: body.priceRange?.trim() || null,
         services: body.services ? JSON.stringify(body.services) : null,
         notes: body.notes?.trim() || null,
+        carPhoto1: body.carPhoto1 || null,
+        carPhoto2: body.carPhoto2 || null,
+        carPhoto3: body.carPhoto3 || null,
       },
     })
 
