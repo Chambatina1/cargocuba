@@ -1,0 +1,21 @@
+# =============================================
+# Render.com - Chambita Deployment
+# =============================================
+
+services:
+  - type: web
+    name: cargocuba
+    runtime: node
+    plan: starter
+    region: oregon
+    branch: main
+    repo: https://github.com/Chambatina1/cargocuba.git
+    buildCommand: npx prisma generate && npm install --ignore-scripts && npm run build
+    startCommand: npx prisma db push --skip-generate 2>/dev/null; node .next/standalone/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 20.11.0
+      - key: DATABASE_URL
+        sync: false
