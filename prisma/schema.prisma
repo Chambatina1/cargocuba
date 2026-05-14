@@ -232,3 +232,22 @@ model Review {
   @@index([targetType, targetId])
   @@index([reviewerType, reviewerId])
 }
+
+// =============================================
+// UBICACIONES COMPARTIDAS POR CLIENTES
+// =============================================
+
+model SharedLocation {
+  id          String   @id @default(cuid())
+  clientName  String
+  clientPhoto String?  // base64 foto del cliente
+  providerId  String
+  lat         Float
+  lng         Float
+  address     String?
+
+  createdAt   DateTime @default(now())
+
+  @@index([providerId])
+  @@index([createdAt])
+}

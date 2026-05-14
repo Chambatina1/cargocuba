@@ -19,7 +19,8 @@ export const metadata: Metadata = {
   keywords: ["servicios móviles", "transporte", "pasaje", "carga", "comida", "barbería", "mecánica", "limpieza", "mapa", "geolocalización"],
   authors: [{ name: "Chambita" }],
   icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    icon: "/logo-chambita-sm.png",
+    apple: "/logo-chambita-sm.png",
   },
   openGraph: {
     title: "Chambita — Servicios Móviles",

@@ -93,6 +93,17 @@ const TRUST_BADGES = [
 
 type ViewType = 'welcome' | 'providers' | 'profile' | 'register' | 'login' | 'mypanel' | 'editprofile' | 'forums' | 'forumDetail' | 'map'
 
+interface SharedLocation {
+  id: string
+  clientName: string
+  clientPhoto: string | null
+  providerId: string
+  lat: number
+  lng: number
+  address: string
+  createdAt: string
+}
+
 // =============================================
 // HELPER FUNCTIONS
 // =============================================
@@ -312,6 +323,13 @@ export default function ChambitaPage() {
   // ---- Live toggle state ----
   const [togglingLive, setTogglingLive] = useState(false)
 
+  // ---- Client shared location state ----
+  const [sharedLocations, setSharedLocations] = useState<SharedLocation[]>([])
+  const [shareLocationOpen, setShareLocationOpen] = useState(false)
+  const [shareClientName, setShareClientName] = useState('')
+  const [shareClientPhoto, setShareClientPhoto] = useState<string | null>(null)
+  const [sharingLocation, setSharingLocation] = useState(false)
+
   const chatEndRef = useRef<HTMLDivElement>(null)
 
   // ---- Load session from localStorage (lazy init avoids set-state-in-effect) ----
@@ -405,6 +423,63 @@ export default function ChambitaPage() {
   useEffect(() => {
     setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
   }, [messages])
+
+  // ---- Fetch shared locations ----
+  const fetchSharedLocations = useCallback(async () => {
+    try {
+      const res = await fetch('/api/shared-locations')
+      if (res.ok) {
+        const data = await res.json()
+        setSharedLocations(data)
+      }
+    } catch { /* ignore */ }
+  }, [])
+
+  // Auto-refresh shared locations every 10s
+  useEffect(() => {
+    fetchSharedLocations()
+    const interval = setInterval(fetchSharedLocations, 10000)
+    return () => clearInterval(interval)
+  }, [fetchSharedLocations])
+
+  // ---- Share location handler ----
+  const handleShareLocation = async (providerId: string) => {
+    if (!userLat || !userLng) {
+      toast.error('Activa tu ubicación GPS para compartir')
+      return
+    }
+    if (!shareClientName.trim()) {
+      toast.error('Ingresa tu nombre')
+      return
+    }
+    setSharingLocation(true)
+    try {
+      const res = await fetch('/api/shared-locations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientName: shareClientName.trim(),
+          clientPhoto: shareClientPhoto,
+          providerId,
+          lat: userLat,
+          lng: userLng,
+          address: 'Ubicación actual del cliente',
+        }),
+      })
+      if (res.ok) {
+        toast.success('Ubicación compartida con el conductor')
+        setShareLocationOpen(false)
+        setShareClientName('')
+        setShareClientPhoto(null)
+        fetchSharedLocations()
+      } else {
+        toast.error('Error al compartir ubicación')
+      }
+    } catch {
+      toast.error('Error de conexión')
+    }
+    setSharingLocation(false)
+  }
 
   // ---- Navigation helpers ----
   const goProviders = useCallback((cat: string) => {
@@ -857,6 +932,22 @@ export default function ChambitaPage() {
     )
   }
 
+  // ---- Floating Logo (always visible) ----
+  const FloatingLogo = () => (
+    <div
+      className="fixed z-[99999] flex items-center justify-center"
+      style={{ top: view === 'map' ? 8 : 12, right: 12 }}
+      onClick={() => view !== 'welcome' && goBack()}
+    >
+      <img
+        src="/logo-chambita-sm.png"
+        alt="Chambita"
+        className="w-10 h-10 rounded-xl shadow-md bg-white cursor-pointer hover:scale-105 transition-transform"
+        style={{ border: '2px solid #f3f4f6' }}
+      />
+    </div>
+  )
+
   // ===========================
   // WELCOME VIEW
   // ===========================
@@ -868,9 +959,9 @@ export default function ChambitaPage() {
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ duration: 0.5 }}
-          className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-orange-500 to-orange-700 shadow-lg mb-4"
+          className="inline-flex items-center justify-center w-24 h-24 rounded-2xl bg-white shadow-lg mb-4 overflow-hidden"
         >
-          <Truck className="text-white" size={40} />
+          <img src="/logo-chambita.png" alt="Chambita" className="w-full h-full object-contain" />
         </motion.div>
         <h1 className="text-3xl md:text-4xl font-bold text-gray-900 tracking-tight">
           <span className="text-orange-600">Chambi</span>ta
@@ -2443,18 +2534,23 @@ export default function ChambitaPage() {
         categories={CATEGORIES}
         vehicleTypes={VEHICLE_TYPES}
         onProviderClick={goProfile}
+        onShareLocation={(providerId) => {
+          setShareLocationOpen(true)
+        }}
         filterCategory={filterCategory}
         availableOnly={availableOnly}
+        sharedLocations={sharedLocations}
       />
 
       {/* Floating Top Bar */}
-      <div className="absolute top-0 left-0 right-0 z-10 p-3">
+      <div className="absolute top-0 left-0 right-0 z-10 p-3" style={{ paddingRight: 56 }}>
         <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-lg p-3 space-y-3">
-          {/* Top row: back + title + panel */}
+          {/* Top row: back + logo + title + panel */}
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9" onClick={goBack}>
               <ArrowLeft size={18} />
             </Button>
+            <img src="/logo-chambita-sm.png" alt="Chambita" className="w-7 h-7 rounded-lg" />
             <div className="flex-1 flex items-center justify-center gap-2">
               <MapPin size={16} className="text-green-600" />
               <span className="font-bold text-gray-800 text-sm">Mapa de Servicios</span>
@@ -2567,6 +2663,9 @@ export default function ChambitaPage() {
   // ===========================
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* Floating Logo - siempre visible */}
+      <FloatingLogo />
+
       {/* Main Content */}
       <main className="flex-1 max-w-4xl mx-auto w-full">
         <AnimatePresence mode="wait">
@@ -2723,6 +2822,103 @@ export default function ChambitaPage() {
             >
               <Star size={16} className="mr-2" />
               Enviar Reseña
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+
+      {/* ===========================
+          SHARE LOCATION SHEET
+          =========================== */}
+      <Sheet open={shareLocationOpen} onOpenChange={setShareLocationOpen}>
+        <SheetContent side="bottom" className="rounded-t-2xl">
+          <SheetHeader className="px-4 pt-2">
+            <SheetTitle className="text-lg flex items-center gap-2">
+              <MapPin size={20} className="text-blue-600" />
+              Compartir mi Ubicación
+            </SheetTitle>
+            <SheetDescription>
+              Tu ubicación se mostrará en el mapa para que el conductor te encuentre
+            </SheetDescription>
+          </SheetHeader>
+          <div className="px-4 py-4 space-y-4">
+            {/* Client name */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-700">Tu nombre *</Label>
+              <Input
+                placeholder="Ej: María"
+                value={shareClientName}
+                onChange={(e) => setShareClientName(e.target.value)}
+                className="rounded-lg"
+              />
+            </div>
+
+            {/* Client photo (optional) */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-700">Tu foto (opcional)</Label>
+              <div className="flex items-center gap-3">
+                <div className="w-16 h-16 rounded-full bg-gray-100 border-2 border-dashed border-gray-300 flex items-center justify-center overflow-hidden">
+                  {shareClientPhoto ? (
+                    <img src={shareClientPhoto} alt="Foto" className="w-full h-full object-cover" />
+                  ) : (
+                    <User size={24} className="text-gray-400" />
+                  )}
+                </div>
+                <label className="cursor-pointer">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0]
+                      if (file) {
+                        try {
+                          const b64 = await fileToBase64(file)
+                          setShareClientPhoto(b64)
+                        } catch { /* ignore */ }
+                      }
+                    }}
+                  />
+                  <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-50 text-orange-700 text-sm font-medium hover:bg-orange-100 transition-colors">
+                    <Camera size={16} />
+                    Subir foto
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            {/* GPS Status */}
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-50 border border-blue-200">
+              {userLat != null && userLng != null ? (
+                <>
+                  <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse" />
+                  <span className="text-sm text-blue-800">
+                    GPS activo — ubicación detectada
+                  </span>
+                </>
+              ) : (
+                <>
+                  <div className="w-3 h-3 rounded-full bg-yellow-500" />
+                  <span className="text-sm text-yellow-800">
+                    Activa tu GPS para compartir ubicación
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+          <SheetFooter className="px-4 pb-4">
+            <Button
+              className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg"
+              onClick={() => {
+                // Use chatTarget provider id if available, else use first provider
+                const pid = chatTarget?.id || selectedProviderId || (providers[0]?.id)
+                if (pid) handleShareLocation(pid)
+                else toast.error('Selecciona un conductor primero')
+              }}
+              disabled={sharingLocation || !userLat || !userLng}
+            >
+              <MapPin size={16} className="mr-2" />
+              {sharingLocation ? 'Compartiendo...' : 'Compartir Ubicación'}
             </Button>
           </SheetFooter>
         </SheetContent>

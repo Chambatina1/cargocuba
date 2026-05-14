@@ -2,6 +2,17 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react'
 
+interface SharedLocationItem {
+  id: string
+  clientName: string
+  clientPhoto: string | null
+  providerId: string
+  lat: number
+  lng: number
+  address: string
+  createdAt: string
+}
+
 interface MapViewProps {
   userLat: number | null
   userLng: number | null
@@ -36,8 +47,10 @@ interface MapViewProps {
   categories: Record<string, { label: string; emoji: string; color: string; desc: string }>
   vehicleTypes?: Record<string, string>
   onProviderClick: (id: string) => void
+  onShareLocation?: (providerId: string) => void
   filterCategory: string | null
   availableOnly: boolean
+  sharedLocations?: SharedLocationItem[]
 }
 
 // Load Leaflet from CDN
@@ -58,7 +71,8 @@ function loadLeafletScript(): Promise<void> {
 
 export default function MapView({
   userLat, userLng, providers, categories, vehicleTypes,
-  onProviderClick, filterCategory, availableOnly,
+  onProviderClick, onShareLocation, filterCategory, availableOnly,
+  sharedLocations = [],
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<any>(null)
@@ -97,7 +111,7 @@ export default function MapView({
 
     mapRef.current = map
     updateMarkers(L)
-  }, [userLat, userLng, providers, filterCategory, availableOnly, categories])
+  }, [userLat, userLng, providers, filterCategory, availableOnly, categories, sharedLocations])
 
   const updateMarkers = useCallback((L: any) => {
     if (!mapRef.current) return
@@ -179,13 +193,87 @@ export default function MapView({
       markersRef.current.push(userMarker)
     }
 
+    // ===== CLIENT SHARED LOCATION MARKERS =====
+    // Show client locations shared with any provider - these appear as blue/orange person markers
+    sharedLocations.forEach((loc) => {
+      if (!loc.lat || !loc.lng) return
+      const clientInitial = loc.clientName ? loc.clientName.charAt(0).toUpperCase() : '?'
+      const clientPhoto = loc.clientPhoto || ''
+
+      const clientIconHtml = `
+        <div style="position:relative;width:44px;height:58px;cursor:pointer;">
+          <svg viewBox="0 0 44 58" width="44" height="58" style="position:absolute;top:0;left:0;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.35));">
+            <defs>
+              <clipPath id="client-loc-${loc.id}">
+                <path d="M22 0 C22 0 0 24 0 34 C0 43.941 9.859 52 22 52 C34.141 52 44 43.941 44 34 C44 24 22 0 22 0 Z"/>
+              </clipPath>
+            </defs>
+            <!-- Blue drop for client -->
+            <path d="M22 0 C22 0 0 24 0 34 C0 43.941 9.859 52 22 52 C34.141 52 44 43.941 44 34 C44 24 22 0 22 0 Z"
+              fill="#3b82f6" stroke="white" stroke-width="2"/>
+            ${clientPhoto ? `
+              <image href="${clientPhoto}" x="2" y="2" width="40" height="48" preserveAspectRatio="xMidYMid slice"
+                clip-path="url(#client-loc-${loc.id})"/>
+            ` : `
+              <text x="22" y="32" text-anchor="middle" fill="white" font-size="18" font-weight="bold"
+                font-family="system-ui,sans-serif">${clientInitial}</text>
+            `}
+            <!-- Pulsing ring to indicate shared location -->
+            <circle cx="34" cy="10" r="6" fill="#f59e0b" stroke="white" stroke-width="2"/>
+            <text x="34" y="13" text-anchor="middle" fill="white" font-size="8" font-weight="bold"
+              font-family="system-ui,sans-serif">C</text>
+          </svg>
+          <!-- Client name label -->
+          <div style="position:absolute;bottom:-16px;left:50%;transform:translateX(-50%);white-space:nowrap;background:rgba(255,255,255,0.95);padding:1px 6px;border-radius:8px;font-size:9px;font-weight:600;color:#1e40af;box-shadow:0 1px 3px rgba(0,0,0,0.2);font-family:system-ui,sans-serif;">
+            ${loc.clientName}
+          </div>
+        </div>
+      `
+
+      const clientIcon = L.divIcon({
+        html: clientIconHtml,
+        className: '',
+        iconSize: [44, 74],
+        iconAnchor: [22, 52],
+      })
+
+      const clientMarker = L.marker([loc.lat, loc.lng], { icon: clientIcon, zIndexOffset: 900 }).addTo(map)
+
+      // Click to show client info
+      clientMarker.on('click', () => {
+        if (mapRef.current) {
+          const timeAgo = (dateStr: string) => {
+            const now = new Date()
+            const date = new Date(dateStr)
+            const seconds = Math.floor((now.getTime() - date.getTime()) / 1000)
+            if (seconds < 60) return 'ahora mismo'
+            if (seconds < 3600) return `hace ${Math.floor(seconds / 60)} min`
+            if (seconds < 86400) return `hace ${Math.floor(seconds / 3600)} h`
+            return `hace ${Math.floor(seconds / 86400)} d`
+          }
+          L.popup({ className: 'client-popup' })
+            .setLatLng([loc.lat, loc.lng])
+            .setContent(`
+              <div style="text-align:center;padding:4px;min-width:140px;font-family:system-ui,sans-serif;">
+                ${clientPhoto ? `<img src="${clientPhoto}" style="width:48px;height:48px;border-radius:50%;object-fit:cover;margin:0 auto 6px;display:block;border:2px solid #3b82f6;" />` : ''}
+                <div style="font-weight:700;color:#1e40af;font-size:14px;">${loc.clientName}</div>
+                <div style="font-size:11px;color:#6b7280;margin-top:2px;">Cliente compartiendo ubicación</div>
+                <div style="font-size:10px;color:#9ca3af;margin-top:4px;">${timeAgo(loc.createdAt)}</div>
+              </div>
+            `)
+            .openOn(mapRef.current)
+        }
+      })
+
+      markersRef.current.push(clientMarker)
+    })
+
     // Fit bounds to show ALL markers + Cuba+Florida region
-    // Add Cuba+Florida corners to ensure the full region is visible
     const cubaFL = [
-      L.latLng(21.0, -85.5), // Western Cuba
-      L.latLng(23.5, -74.0), // Eastern Cuba
-      L.latLng(30.5, -87.5), // NW Florida
-      L.latLng(25.0, -80.0), // SE Florida / Miami
+      L.latLng(21.0, -85.5),
+      L.latLng(23.5, -74.0),
+      L.latLng(30.5, -87.5),
+      L.latLng(25.0, -80.0),
     ]
     const points = [...cubaFL]
     markersRef.current.forEach((m: any) => points.push(m.getLatLng()))
@@ -193,7 +281,7 @@ export default function MapView({
     try {
       map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 8 })
     } catch { /* ignore */ }
-  }, [providers, filterCategory, availableOnly, categories, vehicleTypes, userLat, userLng])
+  }, [providers, filterCategory, availableOnly, categories, vehicleTypes, userLat, userLng, sharedLocations])
 
   // Init map
   useEffect(() => {
@@ -206,9 +294,9 @@ export default function MapView({
   // Update markers on data change
   useEffect(() => {
     if (mapRef.current && (window as any).L) updateMarkers((window as any).L)
-  }, [providers, filterCategory, availableOnly, updateMarkers])
+  }, [providers, filterCategory, availableOnly, sharedLocations, updateMarkers])
 
-  // Update markers when user location changes (don't re-center, just add user marker)
+  // Update markers when user location changes
   useEffect(() => {
     if (mapRef.current && userLat && userLng && (window as any).L) {
       updateMarkers((window as any).L)
@@ -297,7 +385,7 @@ export default function MapView({
                   backdropFilter: 'blur(8px)',
                 }}
               >
-                \u2715
+                {'\u2715'}
               </button>
 
               {/* Profile avatar */}
@@ -467,7 +555,7 @@ export default function MapView({
               padding: '12px 16px',
               borderTop: '1px solid #f3f4f6',
               display: 'flex',
-              gap: 10,
+              gap: 8,
               backgroundColor: 'white',
             }}>
               <a
@@ -484,7 +572,7 @@ export default function MapView({
                   backgroundColor: '#16a34a',
                   color: 'white',
                   textDecoration: 'none',
-                  fontSize: 15,
+                  fontSize: 14,
                   fontWeight: 600,
                 }}
               >
@@ -506,23 +594,56 @@ export default function MapView({
                   backgroundColor: spCat.color,
                   color: 'white',
                   border: 'none',
-                  fontSize: 15,
+                  fontSize: 14,
                   fontWeight: 600,
                   cursor: 'pointer',
                 }}
               >
                 {'\u{1F4AC}'} Mensaje
               </button>
+              {onShareLocation && (
+                <button
+                  onClick={() => {
+                    closeProfile()
+                    onShareLocation(sp.id)
+                  }}
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: 14,
+                    backgroundColor: '#3b82f6',
+                    color: 'white',
+                    border: 'none',
+                    fontSize: 18,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                  title="Compartir mi ubicación"
+                >
+                  {'\u{1F4CD}'}
+                </button>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* Pulse animation */}
+      {/* Pulse animation + client popup styles */}
       <style>{`
         @keyframes pulse {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.5; }
+        }
+        .client-popup .leaflet-popup-content-wrapper {
+          border-radius: 12px;
+          box-shadow: 0 4px 16px rgba(59,130,246,0.25);
+          border: 2px solid #3b82f6;
+        }
+        .client-popup .leaflet-popup-content {
+          margin: 8px 12px;
         }
       `}</style>
     </>
