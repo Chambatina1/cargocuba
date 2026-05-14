@@ -8,7 +8,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params
-    const { token, pin, lat, lng } = await req.json()
+    const { token, pin, lat, lng, _updateOnly } = await req.json()
 
     const provider = await db.provider.findUnique({ where: { id } })
     if (!provider) {
@@ -27,20 +27,23 @@ export async function POST(
       }
     }
 
-    const newStatus = !provider.available
+    // If _updateOnly, just update GPS position without toggling status
+    const updateData: Record<string, unknown> = {}
+    if (lat !== undefined) updateData.lat = Number(lat)
+    if (lng !== undefined) updateData.lng = Number(lng)
+
+    if (!_updateOnly) {
+      updateData.available = !provider.available
+    }
 
     const updated = await db.provider.update({
       where: { id },
-      data: {
-        available: newStatus,
-        ...(lat !== undefined ? { lat: Number(lat) } : {}),
-        ...(lng !== undefined ? { lng: Number(lng) } : {}),
-      },
+      data: updateData,
     })
 
     return NextResponse.json({
       success: true,
-      available: newStatus,
+      available: updated.available,
       provider: updated,
     })
   } catch (error: unknown) {

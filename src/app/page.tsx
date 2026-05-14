@@ -527,6 +527,15 @@ export default function ChambitaPage() {
     }
   }, [filterCategory, availableOnly, searchQuery])
 
+  // ---- REAL-TIME: Auto-refresh providers on map every 8 seconds ----
+  useEffect(() => {
+    if (view !== 'map') return
+    const interval = setInterval(() => {
+      void fetchProviders(filterCategory, availableOnly, searchQuery || undefined)
+    }, 8000)
+    return () => clearInterval(interval)
+  }, [view, filterCategory, availableOnly, searchQuery, fetchProviders])
+
   useEffect(() => {
     if (view === 'mypanel' && selectedProviderId) {
       void fetchProviderDetail(selectedProviderId)
