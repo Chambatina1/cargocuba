@@ -188,14 +188,14 @@ export default function FlotaDeAutosPage() {
   const [adminNewPin, setAdminNewPin] = useState('')
   const [adminMsg, setAdminMsg] = useState('')
 
-  // ---- Admin tap counter (secret: tap logo 5x) ----
+  // ---- Admin tap counter (secret: tap logo 3x) ----
   const logoTapCountRef = useRef(0)
   const logoTapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const handleLogoTap = () => {
     logoTapCountRef.current++
     if (logoTapTimerRef.current) clearTimeout(logoTapTimerRef.current)
-    logoTapTimerRef.current = setTimeout(() => { logoTapCountRef.current = 0 }, 2000)
-    if (logoTapCountRef.current >= 5) {
+    logoTapTimerRef.current = setTimeout(() => { logoTapCountRef.current = 0 }, 3000)
+    if (logoTapCountRef.current >= 3) {
       logoTapCountRef.current = 0
       setView('admin-login')
     }
@@ -547,6 +547,15 @@ export default function FlotaDeAutosPage() {
           <span className="text-xs font-semibold text-gray-700">Cliente</span>
         </motion.button>
       </div>
+
+      {/* Admin access - top right corner */}
+      <button
+        onClick={() => setView('admin-login')}
+        className="fixed top-3 right-3 z-[10000] w-8 h-8 rounded-full bg-white/80 backdrop-blur-sm border border-gray-200 flex items-center justify-center shadow-sm hover:bg-white hover:shadow-md transition-all"
+        title="Admin"
+      >
+        <Shield className="w-4 h-4 text-gray-400" />
+      </button>
 
       {/* Provider Profile Overlay */}
       {selectedProvider && (
