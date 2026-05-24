@@ -73,6 +73,8 @@ export async function POST(req: NextRequest) {
         carPhoto1: body.carPhoto1 || null,
         carPhoto2: body.carPhoto2 || null,
         carPhoto3: body.carPhoto3 || null,
+        lat: typeof body.lat === 'number' ? body.lat : 23.1136,
+        lng: typeof body.lng === 'number' ? body.lng : -82.3666,
       },
     })
 

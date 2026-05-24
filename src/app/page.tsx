@@ -23,6 +23,7 @@ import { Separator } from '@/components/ui/separator'
 import {
   ArrowLeft, Phone, Star, MapPin, Camera, Edit, LogOut,
   Car, User, Stethoscope, Users, Eye, EyeOff, Navigation, X, Check,
+  Shield, Trash2, KeyRound, RefreshCw, Search,
 } from 'lucide-react'
 
 // =============================================
@@ -32,7 +33,7 @@ import {
 const BRAND_COLOR = '#2563eb'
 const BRAND_COLOR_LIGHT = '#dbeafe'
 
-type ViewType = 'home' | 'driver-register' | 'driver-login' | 'driver-panel' | 'driver-edit' | 'doctor' | 'cliente'
+type ViewType = 'home' | 'driver-register' | 'driver-login' | 'driver-panel' | 'driver-edit' | 'doctor' | 'cliente' | 'admin-login' | 'admin-panel'
 
 // =============================================
 // TYPES
@@ -174,6 +175,31 @@ export default function FlotaDeAutosPage() {
 
   // ---- Live toggle state ----
   const [togglingLive, setTogglingLive] = useState(false)
+
+  // ---- Admin state ----
+  const [adminToken, setAdminToken] = useState<string | null>(null)
+  const [adminPassword, setAdminPassword] = useState('')
+  const [adminLoginError, setAdminLoginError] = useState('')
+  const [adminProviders, setAdminProviders] = useState<Provider[]>([])
+  const [adminLoading, setAdminLoading] = useState(false)
+  const [adminSearch, setAdminSearch] = useState('')
+  const [adminDeleteId, setAdminDeleteId] = useState<string | null>(null)
+  const [adminPinResetId, setAdminPinResetId] = useState<string | null>(null)
+  const [adminNewPin, setAdminNewPin] = useState('')
+  const [adminMsg, setAdminMsg] = useState('')
+
+  // ---- Admin tap counter (secret: tap logo 5x) ----
+  const logoTapCountRef = useRef(0)
+  const logoTapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const handleLogoTap = () => {
+    logoTapCountRef.current++
+    if (logoTapTimerRef.current) clearTimeout(logoTapTimerRef.current)
+    logoTapTimerRef.current = setTimeout(() => { logoTapCountRef.current = 0 }, 2000)
+    if (logoTapCountRef.current >= 5) {
+      logoTapCountRef.current = 0
+      setView('admin-login')
+    }
+  }
 
   // ---- Lightbox state ----
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
@@ -327,6 +353,9 @@ export default function FlotaDeAutosPage() {
         carModel: regForm.carModel.trim() || undefined,
         bio: regForm.services.trim() || undefined,
       }
+      // Send GPS coordinates if available
+      if (userLat != null) payload.lat = userLat
+      if (userLng != null) payload.lng = userLng
       if (regPhoto) payload.photo = regPhoto
       if (regCarPhotos[0]) payload.carPhoto1 = regCarPhotos[0]
       if (regCarPhotos[1]) payload.carPhoto2 = regCarPhotos[1]
@@ -374,7 +403,7 @@ export default function FlotaDeAutosPage() {
       const res = await fetch(`/api/providers/${currentProvider.id}/toggle-live`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: currentToken }),
+        body: JSON.stringify({ token: currentToken, lat: userLat, lng: userLng }),
       })
       const data = await res.json()
       if (res.ok && data.success) {
@@ -395,6 +424,9 @@ export default function FlotaDeAutosPage() {
     if (!editPin) { toast.error('Ingresa tu PIN para guardar cambios'); return }
     try {
       const payload: Record<string, unknown> = { pin: editPin, ...editForm }
+      // Always send current GPS coordinates when editing profile
+      if (userLat != null) payload.lat = userLat
+      if (userLng != null) payload.lng = userLng
       if (editPhotos.photo !== undefined) payload.photo = editPhotos.photo
       if (editPhotos.carPhoto1 !== undefined) payload.carPhoto1 = editPhotos.carPhoto1
       if (editPhotos.carPhoto2 !== undefined) payload.carPhoto2 = editPhotos.carPhoto2
@@ -461,7 +493,7 @@ export default function FlotaDeAutosPage() {
       {/* Floating Header */}
       <div className="fixed top-0 left-0 right-0 z-[9999] pointer-events-none">
         <div className="pointer-events-auto mx-3 mt-3">
-          <div className="flex items-center gap-2 bg-white/95 backdrop-blur-md rounded-2xl px-4 py-2.5 shadow-lg border border-gray-100">
+          <div className="flex items-center gap-2 bg-white/95 backdrop-blur-md rounded-2xl px-4 py-2.5 shadow-lg border border-gray-100 cursor-pointer select-none" onClick={handleLogoTap}>
             <Car className="w-5 h-5" style={{ color: BRAND_COLOR }} />
             <span className="font-bold text-sm tracking-tight" style={{ color: BRAND_COLOR }}>
               Flota de Autos
@@ -1336,6 +1368,406 @@ export default function FlotaDeAutosPage() {
   )
 
   // =============================================
+  // ADMIN HANDLERS
+  // =============================================
+
+  const adminFlash = (text: string) => { setAdminMsg(text); setTimeout(() => setAdminMsg(''), 3000) }
+
+  const fetchAdminProviders = useCallback(async () => {
+    setAdminLoading(true)
+    try {
+      const params = new URLSearchParams()
+      if (adminSearch) params.set('search', adminSearch)
+      params.set('all', 'true')
+      const res = await fetch(`/api/admin/providers?${params}`, {
+        headers: { 'Content-Type': 'application/json', 'x-admin-token': adminToken || '' },
+      })
+      if (res.ok) {
+        setAdminProviders(await res.json())
+      } else if (res.status === 401) {
+        setAdminToken(null); setView('home')
+      }
+    } catch { /* ignore */ }
+    setAdminLoading(false)
+  }, [adminSearch, adminToken])
+
+  // Auto-refresh admin list
+  useEffect(() => {
+    if (view === 'admin-panel' && adminToken) fetchAdminProviders()
+  }, [view, adminToken, fetchAdminProviders])
+
+  const handleAdminLogin = async () => {
+    setAdminLoginError('')
+    try {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: adminPassword }),
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        setAdminToken(data.token)
+        setAdminPassword('')
+        setView('admin-panel')
+      } else {
+        setAdminLoginError(data.error || 'Error')
+      }
+    } catch { setAdminLoginError('Error de conexión') }
+  }
+
+  const handleAdminDelete = async () => {
+    if (!adminDeleteId || !adminToken) return
+    try {
+      const res = await fetch(`/api/admin/providers/${adminDeleteId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', 'x-admin-token': adminToken },
+      })
+      const data = await res.json()
+      if (res.ok) {
+        adminFlash(`${data.deletedName} eliminado`)
+        setAdminDeleteId(null)
+        fetchAdminProviders()
+      } else { adminFlash(data.error || 'Error') }
+    } catch { adminFlash('Error de conexión') }
+  }
+
+  const handleAdminResetPin = async () => {
+    if (!adminPinResetId || !adminToken) return
+    try {
+      const res = await fetch(`/api/admin/providers/${adminPinResetId}/reset-pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-token': adminToken },
+        body: JSON.stringify({ pin: adminNewPin || undefined }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        adminFlash(`PIN de ${data.name}: ${data.newPin}`)
+        setAdminPinResetId(null); setAdminNewPin('')
+        fetchAdminProviders()
+      } else { adminFlash(data.error || 'Error') }
+    } catch { adminFlash('Error de conexión') }
+  }
+
+  const handleAdminToggle = async (id: string, field: 'active' | 'available' | 'suspended', value: boolean) => {
+    if (!adminToken) return
+    try {
+      const res = await fetch(`/api/admin/providers/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'x-admin-token': adminToken },
+        body: JSON.stringify({ [field]: !value }),
+      })
+      if (res.ok) fetchAdminProviders()
+    } catch { adminFlash('Error') }
+  }
+
+  // =============================================
+  // ADMIN LOGIN VIEW
+  // =============================================
+  const renderAdminLogin = () => (
+    <motion.div
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+      className="min-h-screen bg-gray-50 flex flex-col"
+    >
+      <div className="bg-white/95 backdrop-blur-md border-b border-gray-100">
+        <div className="flex items-center gap-3 px-4 py-3">
+          <button onClick={() => setView('home')} className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
+            <ArrowLeft className="w-4 h-4 text-gray-700" />
+          </button>
+          <h1 className="text-lg font-bold text-gray-900">Administración</h1>
+        </div>
+      </div>
+      <div className="flex-1 flex flex-col items-center justify-center p-6">
+        <div className="w-full max-w-sm space-y-6">
+          <div className="text-center">
+            <div className="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center text-white shadow-lg bg-gradient-to-br from-red-500 to-orange-500">
+              <Shield className="w-8 h-8" />
+            </div>
+            <h2 className="text-xl font-bold text-gray-900">Panel Admin</h2>
+            <p className="text-sm text-gray-500 mt-1">Flota de Autos</p>
+          </div>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs font-medium text-gray-500 mb-1 block">Contraseña</Label>
+              <Input
+                type="password"
+                placeholder="Contraseña de admin"
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleAdminLogin()}
+                className="h-12 rounded-xl text-base"
+              />
+            </div>
+          </div>
+          {adminLoginError && (
+            <p className="text-sm text-red-500 text-center bg-red-50 py-2 px-4 rounded-xl">{adminLoginError}</p>
+          )}
+          <Button
+            onClick={handleAdminLogin}
+            className="w-full h-12 rounded-2xl text-white font-semibold text-sm shadow-lg bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600"
+          >
+            Entrar al Panel
+          </Button>
+        </div>
+      </div>
+    </motion.div>
+  )
+
+  // =============================================
+  // ADMIN PANEL VIEW
+  // =============================================
+  const renderAdminPanel = () => {
+    if (!adminToken) return null
+    return (
+      <motion.div
+        initial={{ opacity: 0, x: 20 }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={{ opacity: 0, x: -20 }}
+        className="min-h-screen bg-gray-50"
+      >
+        {/* Header */}
+        <div className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-100">
+          <div className="flex items-center gap-3 px-4 py-3">
+            <button onClick={() => { setAdminToken(null); setView('home') }} className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
+              <ArrowLeft className="w-4 h-4 text-gray-700" />
+            </button>
+            <div className="flex-1">
+              <h1 className="text-lg font-bold text-gray-900">Admin</h1>
+              <p className="text-xs text-gray-400">{adminProviders.length} conductores</p>
+            </div>
+            <button
+              onClick={fetchAdminProviders}
+              className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center"
+            >
+              <RefreshCw className={cn("w-4 h-4 text-blue-600", adminLoading && "animate-spin")} />
+            </button>
+            <button
+              onClick={() => { setAdminToken(null); setView('home') }}
+              className="px-3 py-1.5 rounded-full bg-red-50 text-red-600 text-xs font-semibold"
+            >
+              Salir
+            </button>
+          </div>
+
+          {/* Search */}
+          <div className="px-4 pb-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Input
+                placeholder="Buscar por nombre o teléfono..."
+                value={adminSearch}
+                onChange={(e) => setAdminSearch(e.target.value)}
+                className="h-10 rounded-xl pl-9 text-sm"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Toast message */}
+        {adminMsg && (
+          <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[100] bg-gray-900 text-white text-sm px-5 py-2.5 rounded-xl shadow-xl">
+            {adminMsg}
+          </div>
+        )}
+
+        {/* Provider List */}
+        <div className="p-4 space-y-3 max-w-2xl mx-auto">
+          {adminLoading ? (
+            <p className="text-center text-gray-400 py-10">Cargando...</p>
+          ) : adminProviders.length === 0 ? (
+            <p className="text-center text-gray-400 py-10">No se encontraron conductores</p>
+          ) : (
+            adminProviders.map((p) => (
+              <div
+                key={p.id}
+                className={cn(
+                  "bg-white rounded-2xl p-4 shadow-sm border-2 transition-colors",
+                  p.suspended ? "border-red-200" : p.available ? "border-green-200" : "border-gray-100",
+                  !p.active && "opacity-50"
+                )}
+              >
+                <div className="flex gap-3">
+                  {/* Photo */}
+                  <Avatar className="w-12 h-12 flex-shrink-0 cursor-pointer" onClick={() => p.photo && setLightboxSrc(p.photo)}>
+                    <AvatarImage src={p.photo || undefined} />
+                    <AvatarFallback className="text-base font-bold text-white" style={{ backgroundColor: BRAND_COLOR }}>
+                      {p.name.charAt(0).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-sm text-gray-900 truncate">{p.name}</span>
+                      {p.available && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-bold">EN VIVO</span>
+                      )}
+                      {p.suspended && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-bold">SUSPENDIDO</span>
+                      )}
+                    </div>
+                    {(p.carBrand || p.carModel) && (
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {p.carBrand}{p.carBrand && p.carModel ? ' ' : ''}{p.carModel}
+                      </p>
+                    )}
+                    <div className="flex gap-3 mt-1 text-xs text-gray-400 flex-wrap">
+                      <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{p.phone}</span>
+                      <span className="font-semibold text-gray-600">PIN: {p.pin}</span>
+                      <span className="flex items-center gap-1"><Star className="w-3 h-3" />{p.rating.toFixed(1)}</span>
+                    </div>
+                    {p.bio && (
+                      <p className="text-xs text-gray-400 mt-1 truncate">{p.bio}</p>
+                    )}
+
+                    {/* Car photos */}
+                    {([p.carPhoto1, p.carPhoto2, p.carPhoto3].filter(Boolean).length > 0) && (
+                      <div className="flex gap-1.5 mt-2">
+                        {[p.carPhoto1, p.carPhoto2, p.carPhoto3].filter(Boolean).map((photo, i) => (
+                          <div
+                            key={i}
+                            className="w-10 h-10 rounded-lg overflow-hidden cursor-pointer border border-gray-200"
+                            onClick={() => photo && setLightboxSrc(photo)}
+                          >
+                            <img src={photo || ''} alt="" className="w-full h-full object-cover" />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-2 mt-3 flex-wrap">
+                  <button
+                    onClick={() => handleAdminToggle(p.id, 'available', p.available)}
+                    className={cn(
+                      "flex-1 flex items-center justify-center gap-1 h-9 rounded-xl text-xs font-semibold transition-colors",
+                      p.available ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-600"
+                    )}
+                  >
+                    <MapPin className="w-3.5 h-3.5" />
+                    {p.available ? 'Desconectar' : 'Activar Live'}
+                  </button>
+                  <button
+                    onClick={() => handleAdminToggle(p.id, 'suspended', p.suspended)}
+                    className={cn(
+                      "flex-1 flex items-center justify-center gap-1 h-9 rounded-xl text-xs font-semibold transition-colors",
+                      p.suspended ? "bg-green-50 text-green-700" : "bg-orange-50 text-orange-700"
+                    )}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    {p.suspended ? 'Reactivar' : 'Suspender'}
+                  </button>
+                  <button
+                    onClick={() => setAdminPinResetId(p.id)}
+                    className="flex-1 flex items-center justify-center gap-1 h-9 rounded-xl text-xs font-semibold bg-amber-50 text-amber-700 transition-colors"
+                  >
+                    <KeyRound className="w-3.5 h-3.5" />
+                    Nuevo PIN
+                  </button>
+                  <button
+                    onClick={() => setAdminDeleteId(p.id)}
+                    className="flex-1 flex items-center justify-center gap-1 h-9 rounded-xl text-xs font-semibold bg-red-50 text-red-600 transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Eliminar
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Reset PIN Modal */}
+        {adminPinResetId && (
+          <div
+            onClick={() => { setAdminPinResetId(null); setAdminNewPin('') }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-2xl p-6 w-[85%] max-w-[360px] shadow-2xl"
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+                  <KeyRound className="w-5 h-5 text-amber-600" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900">Nuevo PIN</h3>
+                  <p className="text-xs text-gray-500">Deja vacío para PIN aleatorio</p>
+                </div>
+              </div>
+              <Input
+                placeholder="Nuevo PIN (4-6 dígitos)"
+                value={adminNewPin}
+                onChange={(e) => setAdminNewPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                className="h-11 rounded-xl mb-4 text-center text-lg tracking-widest"
+              />
+              <div className="flex gap-3">
+                <Button
+                  onClick={handleAdminResetPin}
+                  className="flex-1 h-11 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold"
+                >
+                  Generar PIN
+                </Button>
+                <Button
+                  onClick={() => { setAdminPinResetId(null); setAdminNewPin('') }}
+                  variant="outline"
+                  className="h-11 rounded-xl"
+                >
+                  Cancelar
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Delete Confirm Modal */}
+        {adminDeleteId && (
+          <div
+            onClick={() => setAdminDeleteId(null)}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-2xl p-6 w-[85%] max-w-[360px] shadow-2xl"
+            >
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                  <Trash2 className="w-5 h-5 text-red-600" />
+                </div>
+                <h3 className="font-bold text-red-600">Eliminar Conductor</h3>
+              </div>
+              <p className="text-sm text-gray-600 mb-4">Se eliminará toda la información del conductor y no se podrá recuperar.</p>
+              <div className="flex gap-3">
+                <Button
+                  onClick={handleAdminDelete}
+                  className="flex-1 h-11 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold"
+                >
+                  Sí, Eliminar
+                </Button>
+                <Button
+                  onClick={() => setAdminDeleteId(null)}
+                  variant="outline"
+                  className="h-11 rounded-xl"
+                >
+                  Cancelar
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </motion.div>
+    )
+  }
+
+  // =============================================
   // MAIN RENDER
   // =============================================
 
@@ -1348,6 +1780,8 @@ export default function FlotaDeAutosPage() {
       {view === 'driver-edit' && <div key="driver-edit">{renderDriverEdit()}</div>}
       {view === 'doctor' && <div key="doctor">{renderDoctor()}</div>}
       {view === 'cliente' && <div key="cliente">{renderCliente()}</div>}
+      {view === 'admin-login' && <div key="admin-login">{renderAdminLogin()}</div>}
+      {view === 'admin-panel' && <div key="admin-panel">{renderAdminPanel()}</div>}
     </AnimatePresence>
   )
 }
