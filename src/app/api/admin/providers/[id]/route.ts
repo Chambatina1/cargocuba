@@ -25,14 +25,11 @@ export async function PUT(
 
     const clean: Record<string, unknown> = {}
     const allowedFields = [
-      'name', 'phone', 'pin', 'serviceCategory', 'vehicleType',
+      'name', 'phone', 'pin', 'carBrand', 'carModel',
       'photo', 'bio', 'businessName', 'services', 'priceRange',
       'schedule', 'socialMedia', 'carPhoto1', 'carPhoto2', 'carPhoto3',
       'notes', 'lat', 'lng', 'active', 'available',
       'suspended', 'suspendedReason', 'idNumber', 'rating', 'totalJobs',
-      'route1From', 'route1To', 'route1FromLat', 'route1FromLng', 'route1ToLat', 'route1ToLng',
-      'route2From', 'route2To', 'route2FromLat', 'route2FromLng', 'route2ToLat', 'route2ToLng',
-      'route3From', 'route3To', 'route3FromLat', 'route3FromLng', 'route3ToLat', 'route3ToLng',
     ]
 
     const photoFields = ['photo', 'carPhoto1', 'carPhoto2', 'carPhoto3']

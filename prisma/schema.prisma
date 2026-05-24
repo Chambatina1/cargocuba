@@ -1,5 +1,5 @@
 // =============================================
-// Chambita Platform - Enhanced Schema
+// Flota de Autos - Simplified Schema
 // =============================================
 
 generator client {
@@ -12,17 +12,18 @@ datasource db {
 }
 
 // =============================================
-// PROVEEDOR (Conductor / Dueño de negocio móvil)
+// PROVIDER (Conductor)
 // =============================================
-// Soporta múltiples categorías: pasaje, carga, comida, barbero, mecánico, fregador
 
 model Provider {
   id            String   @id @default(cuid())
   name          String
   phone         String   @unique
   pin           String
-  serviceCategory String @default("pasaje") // pasaje, carga, comida, barbero, mecanico, fregador
-  vehicleType   String   @default("carro_moderno")
+
+  // Car info
+  carBrand      String?
+  carModel      String?
 
   // Ubicación GPS
   lat           Float    @default(23.1136)
@@ -36,14 +37,14 @@ model Provider {
 
   // Perfil / Ficha de presentación
   photo         String?  // Foto de perfil (URL o base64)
-  bio           String?  // Descripción del negocio
-  businessName  String?  // Nombre del negocio (ej: "El Rápido", "Corte Perfecto")
+  bio           String?  // Descripción del servicio que ofrece
+  businessName  String?  // Nombre del negocio
   services      String?  // Lista de servicios ofrecidos (JSON string)
-  priceRange    String?  // Rango de precios (ej: "5-15 CUP", "Por cotizar")
-  schedule      String?  // Horario de trabajo (ej: "Lun-Sáb 7am-9pm")
+  priceRange    String?  // Rango de precios
+  schedule      String?  // Horario de trabajo
   socialMedia   String?  // Redes sociales (JSON string)
 
-  // Fotos del vehículo / negocio (base64 comprimido)
+  // Fotos del vehículo (base64 comprimido)
   carPhoto1     String?
   carPhoto2     String?
   carPhoto3     String?
@@ -63,28 +64,6 @@ model Provider {
   referredByName    String?
   referredByPhone   String?
 
-  // Rutas frecuentes (hasta 3)
-  route1From     String?
-  route1To       String?
-  route1FromLat  Float?
-  route1FromLng  Float?
-  route1ToLat    Float?
-  route1ToLng    Float?
-
-  route2From     String?
-  route2To       String?
-  route2FromLat  Float?
-  route2FromLng  Float?
-  route2ToLat    Float?
-  route2ToLng    Float?
-
-  route3From     String?
-  route3To       String?
-  route3FromLat  Float?
-  route3FromLng  Float?
-  route3ToLat    Float?
-  route3ToLng    Float?
-
   // Sesión
   sessionToken  String?
   sessionExpiry DateTime?
@@ -92,162 +71,7 @@ model Provider {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  forumPosts    ForumPost[]
-
   @@index([phone])
   @@index([active])
   @@index([available])
-  @@index([serviceCategory])
-  @@index([vehicleType])
-}
-
-// =============================================
-// CLIENTE (Usuario que busca servicios)
-// =============================================
-
-model Client {
-  id        String   @id @default(cuid())
-  name      String
-  phone     String   @unique
-  lat       Float?
-  lng       Float?
-  photo     String?
-  bio       String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([phone])
-}
-
-// =============================================
-// FOROS COMUNITARIOS (3 foros principales)
-// =============================================
-
-model Forum {
-  id          String   @id @default(cuid())
-  title       String
-  description String
-  icon        String   // Emoji o nombre de icono
-  color       String   @default("#ea580c") // Color del tema
-  order       Int      @default(0)
-  postsCount  Int      @default(0)
-
-  posts       ForumPost[]
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-}
-
-// =============================================
-// PUBLICACIONES EN FOROS
-// =============================================
-
-model ForumPost {
-  id          String   @id @default(cuid())
-  forumId     String
-  authorName  String
-  authorPhone String?
-  title       String
-  content     String
-  likes       Int      @default(0)
-  pinned      Boolean  @default(false)
-
-  forum       Forum    @relation(fields: [forumId], references: [id], onDelete: Cascade)
-  providerId  String?
-  provider    Provider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([forumId])
-  @@index([authorPhone])
-}
-
-// =============================================
-// MENSAJES
-// =============================================
-
-model Message {
-  id           String   @id @default(cuid())
-  content      String
-  senderType   String
-  senderId     String
-  receiverType String
-  receiverId   String
-  read         Boolean  @default(false)
-
-  createdAt    DateTime @default(now())
-
-  @@index([senderType, senderId])
-  @@index([receiverType, receiverId])
-}
-
-// =============================================
-// VIAJES / SERVICIOS SOLICITADOS
-// =============================================
-
-model Trip {
-  id               String   @id @default(cuid())
-  status           String   @default("pending")
-  cargoDescription String
-  pickupAddress    String
-  pickupLat        Float
-  pickupLng        Float
-  destAddress      String?
-  destLat          Float?
-  destLng          Float?
-  price            Float?
-  clientId         String
-  driverId         String?
-
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-
-  @@index([status])
-  @@index([clientId])
-  @@index([driverId])
-}
-
-// =============================================
-// RESEÑAS / CALIFICACIONES
-// =============================================
-
-model Review {
-  id            String   @id @default(cuid())
-  targetType    String   // "provider" o "client"
-  targetId      String
-  reviewerType  String   // "provider" o "client"
-  reviewerId    String
-  rating        Int
-  comment       String?
-  punctual      Boolean?
-  respectful    Boolean?
-  careful       Boolean?
-  recommended   Boolean?
-  tripId        String?
-
-  createdAt     DateTime @default(now())
-
-  @@index([targetType, targetId])
-  @@index([reviewerType, reviewerId])
-}
-
-// =============================================
-// UBICACIONES COMPARTIDAS POR CLIENTES
-// =============================================
-
-model SharedLocation {
-  id          String   @id @default(cuid())
-  clientName  String
-  clientPhoto String?  // base64 foto del cliente
-  providerId  String
-  lat         Float
-  lng         Float
-  address     String?
-
-  createdAt   DateTime @default(now())
-
-  @@index([providerId])
-  @@index([createdAt])
 }

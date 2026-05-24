@@ -51,13 +51,10 @@ export async function PUT(
     // Clean and prepare update data
     const clean: Record<string, unknown> = {}
     const allowedFields = [
-      'name', 'phone', 'pin', 'serviceCategory', 'vehicleType',
+      'name', 'phone', 'pin', 'carBrand', 'carModel',
       'photo', 'bio', 'businessName', 'services', 'priceRange',
       'schedule', 'socialMedia', 'carPhoto1', 'carPhoto2', 'carPhoto3',
       'notes', 'lat', 'lng',
-      'route1From', 'route1To', 'route1FromLat', 'route1FromLng', 'route1ToLat', 'route1ToLng',
-      'route2From', 'route2To', 'route2FromLat', 'route2FromLng', 'route2ToLat', 'route2ToLng',
-      'route3From', 'route3To', 'route3FromLat', 'route3FromLng', 'route3ToLat', 'route3ToLng',
     ]
 
     // Photo fields should NOT be trimmed (they are base64)
@@ -66,7 +63,6 @@ export async function PUT(
     for (const field of allowedFields) {
       if (updateData[field] !== undefined) {
         if (photoFields.includes(field)) {
-          // For photos: empty string → null, otherwise keep as-is
           const val = updateData[field]
           clean[field] = (typeof val === 'string' && val.trim() === '') ? null : val
         } else {

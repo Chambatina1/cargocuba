@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
-// GET /api/providers/nearby - Get providers near a location (GEOLOCATION PREMISA)
+// GET /api/providers/nearby - Get providers near a location (GEOLOCATION)
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
     const lat = parseFloat(searchParams.get('lat') || '23.1136')
     const lng = parseFloat(searchParams.get('lng') || '-82.3666')
     const radius = parseFloat(searchParams.get('radius') || '1500000') // 1500km default (Cuba + Florida + Caribe)
-    const category = searchParams.get('category')
     const available = searchParams.get('available')
     const search = searchParams.get('search')
 
@@ -17,9 +16,6 @@ export async function GET(req: NextRequest) {
       suspended: false,
     }
 
-    if (category && category !== 'all') {
-      where.serviceCategory = category
-    }
     if (available === 'true') {
       where.available = true
     }

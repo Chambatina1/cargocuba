@@ -16,12 +16,10 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url)
     const search = searchParams.get('search')
-    const category = searchParams.get('category')
     const includeSuspended = searchParams.get('all') === 'true'
 
     const where: Record<string, unknown> = {}
     if (!includeSuspended) where.active = true
-    if (category && category !== 'all') where.serviceCategory = category
     if (search) {
       where.OR = [
         { name: { contains: search } },
@@ -35,7 +33,7 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: 'desc' },
       select: {
         id: true, name: true, phone: true, pin: true,
-        serviceCategory: true, vehicleType: true,
+        carBrand: true, carModel: true,
         lat: true, lng: true,
         active: true, available: true, suspended: true,
         suspendedReason: true,
@@ -45,9 +43,6 @@ export async function GET(req: NextRequest) {
         socialMedia: true,
         carPhoto1: true, carPhoto2: true, carPhoto3: true,
         notes: true, idNumber: true,
-        route1From: true, route1To: true,
-        route2From: true, route2To: true,
-        route3From: true, route3To: true,
         createdAt: true, updatedAt: true,
       },
     })
@@ -67,7 +62,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json()
-    const { name, phone, pin, serviceCategory, vehicleType, businessName } = body
+    const { name, phone, pin, carBrand, carModel } = body
 
     if (!name || !phone) {
       return NextResponse.json({ error: 'Nombre y teléfono son obligatorios' }, { status: 400 })
@@ -83,9 +78,9 @@ export async function POST(req: NextRequest) {
         name: name.trim(),
         phone: phone.trim(),
         pin: (pin || '1234').trim(),
-        serviceCategory: serviceCategory || 'pasaje',
-        vehicleType: vehicleType || 'carro_moderno',
-        businessName: businessName?.trim() || null,
+        carBrand: carBrand?.trim() || null,
+        carModel: carModel?.trim() || null,
+        businessName: body.businessName?.trim() || null,
         photo: body.photo || null,
         bio: body.bio?.trim() || null,
         schedule: body.schedule?.trim() || null,
@@ -97,12 +92,6 @@ export async function POST(req: NextRequest) {
         carPhoto3: body.carPhoto3 || null,
         lat: body.lat || 23.1136,
         lng: body.lng || -82.3666,
-        route1From: body.route1From || null,
-        route1To: body.route1To || null,
-        route2From: body.route2From || null,
-        route2To: body.route2To || null,
-        route3From: body.route3From || null,
-        route3To: body.route3To || null,
         active: body.active !== undefined ? body.active : true,
       },
     })

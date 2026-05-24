@@ -14,17 +14,28 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Chambita — Tu plataforma de servicios móviles",
-  description: "Encuentra servicios móviles cerca de ti: transporte de pasajeros, carga, comida, barbería, mecánica y limpieza. Conecta con proveedores en tu zona.",
-  keywords: ["servicios móviles", "transporte", "pasaje", "carga", "comida", "barbería", "mecánica", "limpieza", "mapa", "geolocalización"],
-  authors: [{ name: "Chambita" }],
+  title: "Flota de Autos — Flota de autos en tiempo real",
+  description:
+    "Encuentra conductores en Florida y el Caribe. Flota de autos con geolocalización en tiempo real. Transporte, carga, servicios móviles.",
+  keywords: [
+    "flota de autos",
+    "conductores",
+    "Florida",
+    "Caribe",
+    "transporte",
+    "geolocalización",
+    "tiempo real",
+    "mapa",
+  ],
+  authors: [{ name: "Flota de Autos" }],
   icons: {
-    icon: "/logo-chambita-sm.png",
-    apple: "/logo-chambita-sm.png",
+    icon: "/logo.svg",
+    apple: "/logo.svg",
   },
   openGraph: {
-    title: "Chambita — Servicios Móviles",
-    description: "Tu plataforma de servicios móviles con geolocalización en tiempo real",
+    title: "Flota de Autos — Conductores en tiempo real",
+    description:
+      "Tu plataforma de flota de autos con geolocalización en tiempo real en Florida y el Caribe",
     type: "website",
   },
 };

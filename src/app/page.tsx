@@ -11,133 +11,28 @@ const MapView = dynamic(() => import('@/components/MapView'), { ssr: false })
 
 // shadcn/ui components
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
-import { Separator } from '@/components/ui/separator'
-import { Progress } from '@/components/ui/progress'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Checkbox } from '@/components/ui/checkbox'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Label } from '@/components/ui/label'
-import {
-  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter,
-} from '@/components/ui/sheet'
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Separator } from '@/components/ui/separator'
 
 // lucide icons
 import {
-  ArrowLeft, Phone, Star, MessageCircle, MapPin, Clock, Search,
-  Plus, Edit, LogOut, Heart, Send, ChevronRight, User, Briefcase,
-  Camera, Check, Zap, Shield, Truck, Users, X, Menu,
+  ArrowLeft, Phone, Star, MapPin, Camera, Edit, LogOut,
+  Car, User, Stethoscope, Users, Eye, EyeOff, Navigation, X, Check,
 } from 'lucide-react'
 
 // =============================================
 // CONSTANTS
 // =============================================
 
-export const CATEGORIES: Record<string, { label: string; emoji: string; color: string; desc: string }> = {
-  pasaje: { label: 'Automóvil de Pasaje', emoji: '🚗', color: '#ea580c', desc: 'Transporte de pasajeros' },
-  carga: { label: 'Automóvil de Carga', emoji: '🚚', color: '#7c3aed', desc: 'Transporte de carga y mudanzas' },
-  comida: { label: 'Automóvil de Comida', emoji: '🍕', color: '#dc2626', desc: 'Carros de comida y snacks' },
-  barbero: { label: 'Automóvil de Barberos', emoji: '💈', color: '#2563eb', desc: 'Barberos y peluqueros itinerantes' },
-  fregador: { label: 'Automóvil de Fregado', emoji: '🧹', color: '#16a34a', desc: 'Carros de fregado y limpieza' },
-  recreativo: { label: 'Automóvil Recreativo', emoji: '🚘', color: '#e11d48', desc: 'Carros recreativos y de paseo' },
-  bote: { label: 'Bote Recreativo', emoji: '⛵', color: '#0891b2', desc: 'Botes recreativos y acuáticos' },
-  mascotas: { label: 'Automóvil de Mascotas', emoji: '🐕', color: '#d97706', desc: 'Transporte y cuidado de mascotas' },
-  cerrajeria: { label: 'Automóvil de Llaves', emoji: '🔑', color: '#6d28d9', desc: 'Mecánicos de llaves y cerrajería' },
-  grua: { label: 'Grúas', emoji: '🏗️', color: '#be185d', desc: 'Servicio de grúas y remolque' },
-  banco_energia: { label: 'Automóvil de Banco de Energía', emoji: '🔋', color: '#059669', desc: 'Carros banco de energía y carga portátil' },
-}
+const BRAND_COLOR = '#2563eb'
+const BRAND_COLOR_LIGHT = '#dbeafe'
 
-export const VEHICLE_TYPES: Record<string, string> = {
-  bicitaxi: 'Bicitaxi',
-  carro_ruso: 'Carro Ruso',
-  triciclo: 'Triciclo',
-  carro_moderno: 'Carro Moderno',
-  almendron: 'Almendrón',
-  camion_mediano: 'Camión Mediano',
-  camion_grande: 'Camión Grande',
-  carro_recreativo: 'Carro Recreativo',
-  bote_recreativo: 'Bote Recreativo',
-  carro_mascotas: 'Carro de Mascotas',
-  grua: 'Grúa',
-  banco_energia: 'Carro Banco de Energía',
-}
-
-export const CATEGORY_VEHICLES: Record<string, string[]> = {
-  pasaje: ['bicitaxi', 'carro_ruso', 'triciclo', 'carro_moderno', 'almendron'],
-  carga: ['camion_mediano', 'camion_grande', 'triciclo', 'carro_moderno'],
-  comida: ['triciclo', 'carro_moderno', 'carro_ruso'],
-  barbero: [],
-  fregador: ['triciclo', 'carro_moderno', 'bicitaxi'],
-  recreativo: ['carro_recreativo', 'carro_moderno'],
-  bote: ['bote_recreativo'],
-  mascotas: ['carro_mascotas', 'carro_moderno'],
-  cerrajeria: [],
-  grua: ['grua'],
-  banco_energia: ['banco_energia'],
-}
-
-const TRUST_BADGES = [
-  { key: 'punctual', label: 'Puntual', icon: '⏰' },
-  { key: 'respectful', label: 'Respetuoso', icon: '🤝' },
-  { key: 'careful', label: 'Cuidadoso', icon: '🛡️' },
-  { key: 'recommended', label: 'Recomendado', icon: '👍' },
-]
-
-type ViewType = 'welcome' | 'providers' | 'profile' | 'register' | 'login' | 'mypanel' | 'editprofile' | 'forums' | 'forumDetail' | 'map' | 'clientLogin' | 'clientRegister' | 'clientPanel'
-
-interface SharedLocation {
-  id: string
-  clientName: string
-  clientPhoto: string | null
-  providerId: string
-  lat: number
-  lng: number
-  address: string
-  createdAt: string
-}
-
-// =============================================
-// HELPER FUNCTIONS
-// =============================================
-
-function timeAgo(dateStr: string): string {
-  const now = new Date()
-  const date = new Date(dateStr)
-  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000)
-
-  if (seconds < 60) return 'ahora mismo'
-  if (seconds < 3600) return `hace ${Math.floor(seconds / 60)} min`
-  if (seconds < 86400) return `hace ${Math.floor(seconds / 3600)} h`
-  if (seconds < 604800) return `hace ${Math.floor(seconds / 86400)} d`
-  return `hace ${Math.floor(seconds / 604800)} sem`
-}
-
-function formatPhone(phone: string): string {
-  const cleaned = phone.replace(/\D/g, '')
-  if (cleaned.startsWith('53')) return `+${cleaned}`
-  if (cleaned.startsWith('+53')) return cleaned
-  return `+53${cleaned}`
-}
-
-function getDistanceKm(lat1: number, lng1: number, lat2: number, lng2: number): string {
-  const R = 6371
-  const dLat = ((lat2 - lat1) * Math.PI) / 180
-  const dLng = ((lng2 - lng1) * Math.PI) / 180
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-  const km = R * c
-  if (km < 1) return `${Math.round(km * 1000)} m`
-  if (km < 10) return `${km.toFixed(1)} km`
-  return `${Math.round(km)} km`
-}
+type ViewType = 'home' | 'driver-register' | 'driver-login' | 'driver-panel' | 'driver-edit' | 'doctor' | 'cliente'
 
 // =============================================
 // TYPES
@@ -148,8 +43,10 @@ interface Provider {
   name: string
   phone: string
   pin?: string
-  serviceCategory: string
-  vehicleType: string
+  carBrand?: string | null
+  carModel?: string | null
+  bio?: string | null
+  services?: string | null
   lat?: number
   lng?: number
   active: boolean
@@ -157,63 +54,12 @@ interface Provider {
   rating: number
   totalJobs: number
   photo?: string | null
-  bio?: string | null
-  businessName?: string | null
-  services?: string | null
-  priceRange?: string | null
-  schedule?: string | null
-  socialMedia?: string | null
   carPhoto1?: string | null
   carPhoto2?: string | null
   carPhoto3?: string | null
-  notes?: string | null
   suspended: boolean
-  suspendedReason?: string | null
-  route1From?: string | null
-  route1To?: string | null
-  route2From?: string | null
-  route2To?: string | null
-  route3From?: string | null
-  route3To?: string | null
-  sessionToken?: string | null
   createdAt: string
   updatedAt: string
-}
-
-interface Forum {
-  id: string
-  title: string
-  description: string
-  icon: string
-  color: string
-  order: number
-  postsCount: number
-  posts?: ForumPost[]
-  _count?: { posts: number }
-  createdAt: string
-}
-
-interface ForumPost {
-  id: string
-  forumId: string
-  authorName: string
-  authorPhone?: string | null
-  title: string
-  content: string
-  likes: number
-  pinned: boolean
-  createdAt: string
-}
-
-interface Message {
-  id: string
-  content: string
-  senderType: string
-  senderId: string
-  receiverType: string
-  receiverId: string
-  read: boolean
-  createdAt: string
 }
 
 // =============================================
@@ -236,125 +82,112 @@ const staggerItem = {
 }
 
 // =============================================
+// HELPER FUNCTIONS
+// =============================================
+
+function formatPhone(phone: string): string {
+  const cleaned = phone.replace(/\D/g, '')
+  if (cleaned.startsWith('+')) return cleaned
+  if (cleaned.startsWith('1') && cleaned.length === 11) return `+${cleaned}`
+  if (cleaned.startsWith('53')) return `+${cleaned}`
+  return `+${cleaned}`
+}
+
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    const canvas = document.createElement('canvas')
+    const MAX_SIZE = 800
+    const QUALITY = 0.85
+
+    img.onload = () => {
+      let w = img.width
+      let h = img.height
+      if (w > MAX_SIZE || h > MAX_SIZE) {
+        if (w > h) { h = (h * MAX_SIZE) / w; w = MAX_SIZE }
+        else { w = (w * MAX_SIZE) / h; h = MAX_SIZE }
+      }
+      canvas.width = w
+      canvas.height = h
+      const ctx = canvas.getContext('2d')
+      if (!ctx) { reject(new Error('No canvas context')); return }
+      ctx.drawImage(img, 0, 0, w, h)
+      resolve(canvas.toDataURL('image/jpeg', QUALITY))
+    }
+    img.onerror = reject
+    img.src = URL.createObjectURL(file)
+  })
+}
+
+// =============================================
 // MAIN COMPONENT
 // =============================================
 
-export default function ChambitaPage() {
+export default function FlotaDeAutosPage() {
   // ---- Core view state ----
-  // Empezar en mapa si ya hay sesión
   const [view, setView] = useState<ViewType>(() => {
     try {
-      const stored = localStorage.getItem('chambita_session')
+      const stored = localStorage.getItem('flota_session')
       if (stored) {
         const session = JSON.parse(stored)
-        if (session.provider && session.token) return 'map'
+        if (session.provider && session.token) return 'home'
       }
     } catch { /* ignore */ }
-    return 'welcome'
+    return 'home'
   })
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
-  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null)
-  const [selectedForumId, setSelectedForumId] = useState<string | null>(null)
 
   // ---- Auth state ----
   const [currentProvider, setCurrentProvider] = useState<Provider | null>(null)
   const [currentToken, setCurrentToken] = useState<string | null>(null)
 
-  // ---- Client auth state ----
-  const [currentClient, setCurrentClient] = useState<{ id: string; name: string; phone: string; photo: string | null } | null>(null)
-  const [clientLoginPhone, setClientLoginPhone] = useState('')
-  const [clientLoginError, setClientLoginError] = useState('')
-  const [clientRegisterForm, setClientRegisterForm] = useState({ name: '', phone: '' })
-  const [clientRegisterPhoto, setClientRegisterPhoto] = useState<string | null>(null)
-  const [clientRegistering, setClientRegistering] = useState(false)
-
-  // ---- Geolocation state (PREMISA OBLIGATORIA) ----
+  // ---- Geolocation state ----
   const [userLat, setUserLat] = useState<number | null>(null)
   const [userLng, setUserLng] = useState<number | null>(null)
-  const [geoError, setGeoError] = useState<string | null>(null)
-  const [geoLoading, setGeoLoading] = useState(true)
   const watchIdRef = useRef<number | null>(null)
 
   // ---- Data state ----
   const [providers, setProviders] = useState<Provider[]>([])
-  const [providerDetail, setProviderDetail] = useState<Provider | null>(null)
-  const [forums, setForums] = useState<Forum[]>([])
-  const [forumDetail, setForumDetail] = useState<Forum | null>(null)
-  const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(false)
 
-  // ---- Providers filter ----
-  const [searchQuery, setSearchQuery] = useState('')
-  const [availableOnly, setAvailableOnly] = useState(false)
-  const [filterCategory, setFilterCategory] = useState<string | null>(null)
-
-  // ---- Chat state ----
-  const [chatOpen, setChatOpen] = useState(false)
-  const [chatTarget, setChatTarget] = useState<Provider | null>(null)
-  const [chatMessage, setChatMessage] = useState('')
-
-  // ---- Review state ----
-  const [reviewOpen, setReviewOpen] = useState(false)
-  const [reviewRating, setReviewRating] = useState(0)
-  const [reviewComment, setReviewComment] = useState('')
-  const [reviewBadges, setReviewBadges] = useState({
-    punctual: false, respectful: false, careful: false, recommended: false,
-  })
-
-  // ---- New forum post state ----
-  const [newPostOpen, setNewPostOpen] = useState(false)
-  const [newPostTitle, setNewPostTitle] = useState('')
-  const [newPostContent, setNewPostContent] = useState('')
-  const [newPostAuthor, setNewPostAuthor] = useState('')
-  const [newPostAuthorPhone, setNewPostAuthorPhone] = useState('')
-
-  // ---- Register wizard state ----
-  const [regStep, setRegStep] = useState(1)
+  // ---- Register form state ----
   const [regForm, setRegForm] = useState({
-    name: '', businessName: '', phone: '', pin: '', confirmPin: '',
-    serviceCategory: '', vehicleType: '', bio: '', services: '',
-    priceRange: '', schedule: '',
+    name: '', phone: '', pin: '', confirmPin: '',
+    carBrand: '', carModel: '', services: '',
   })
   const [regPhoto, setRegPhoto] = useState<string | null>(null)
   const [regCarPhotos, setRegCarPhotos] = useState<string[]>([])
+  const [registering, setRegistering] = useState(false)
+  const [showPin, setShowPin] = useState(false)
+  const [showConfirmPin, setShowConfirmPin] = useState(false)
 
   // ---- Login state ----
   const [loginPhone, setLoginPhone] = useState('')
   const [loginPin, setLoginPin] = useState('')
   const [loginError, setLoginError] = useState('')
+  const [loginShowPin, setLoginShowPin] = useState(false)
 
-  // ---- Edit profile state ----
+  // ---- Edit form state ----
   const [editForm, setEditForm] = useState<Record<string, string>>({})
   const [editPin, setEditPin] = useState('')
   const [editPhotos, setEditPhotos] = useState<{ photo?: string; carPhoto1?: string; carPhoto2?: string; carPhoto3?: string }>({})
+  const [editShowPin, setEditShowPin] = useState(false)
 
   // ---- Live toggle state ----
   const [togglingLive, setTogglingLive] = useState(false)
 
-  // ---- Client shared location state ----
-  const [sharedLocations, setSharedLocations] = useState<SharedLocation[]>([])
-  const [shareLocationOpen, setShareLocationOpen] = useState(false)
-  const [shareTargetProviderId, setShareTargetProviderId] = useState<string | null>(null)
-  const [shareClientName, setShareClientName] = useState('')
-  const [shareClientPhoto, setShareClientPhoto] = useState<string | null>(null)
-  const [sharingLocation, setSharingLocation] = useState(false)
-
-  const chatEndRef = useRef<HTMLDivElement>(null)
-  const chatPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
   // ---- Lightbox state ----
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
 
-  // ---- Load session from localStorage (lazy init avoids set-state-in-effect) ----
-  const sessionRef = useRef<{ provider: Provider | null; token: string | null }>({ provider: null, token: null })
+  // ---- Profile overlay state ----
+  const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null)
+
+  // ---- Load session from localStorage ----
   useEffect(() => {
     try {
-      const stored = localStorage.getItem('chambita_session')
+      const stored = localStorage.getItem('flota_session')
       if (stored) {
         const session = JSON.parse(stored)
         if (session.provider && session.token) {
-          sessionRef.current = session
-          // Defer state update to avoid synchronous setState in effect
           queueMicrotask(() => {
             setCurrentProvider(session.provider)
             setCurrentToken(session.token)
@@ -362,82 +195,43 @@ export default function ChambitaPage() {
         }
       }
     } catch { /* ignore */ }
+  }, [])
 
-    // Load client session
-    try {
-      const clientStored = localStorage.getItem('chambita_client')
-      if (clientStored) {
-        const client = JSON.parse(clientStored)
-        if (client && client.id) {
-          queueMicrotask(() => {
-            setCurrentClient(client)
-          })
-        }
+  // ---- GEOLOCATION ----
+  useEffect(() => {
+    if (!navigator.geolocation) return
+
+    const updatePosition = (lat: number, lng: number) => {
+      setUserLat(lat)
+      setUserLng(lng)
+
+      if (currentProvider?.available && currentToken) {
+        fetch(`/api/providers/${currentProvider.id}/toggle-live`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            token: currentToken,
+            lat,
+            lng,
+            _updateOnly: true,
+          }),
+        }).catch(() => {})
       }
-    } catch { /* ignore */ }
-  }, [])
-
-  // ---- Seed forums on first load ----
-  useEffect(() => {
-    fetch('/api/forums/seed', { method: 'POST' }).catch(() => {})
-  }, [])
-
-  // ---- GEOLOCATION ACTIVA (PREMISA OBLIGATORIA) ----
-  useEffect(() => {
-    if (!navigator.geolocation) {
-      setGeoError('Tu navegador no soporta geolocalización')
-      setGeoLoading(false)
-      // Fallback: La Habana
-      setUserLat(null)
-      setUserLng(null)
-      return
     }
 
-    // Primera lectura rápida
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setUserLat(pos.coords.latitude)
-        setUserLng(pos.coords.longitude)
-        setGeoError(null)
-        setGeoLoading(false)
-      },
-      (err) => {
-        // Si el usuario deniega permiso, usar fallback
-        setUserLat(null)
-        setUserLng(null)
-        setGeoError('Activa tu ubicación para mejores resultados')
-        setGeoLoading(false)
-      },
+      (pos) => updatePosition(pos.coords.latitude, pos.coords.longitude),
+      () => {},
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
     )
 
-    // Watch continuo para tracking en tiempo real
     const id = navigator.geolocation.watchPosition(
-      (pos) => {
-        setUserLat(pos.coords.latitude)
-        setUserLng(pos.coords.longitude)
-        setGeoError(null)
-
-        // Si es proveedor y está live, actualizar ubicación en servidor
-        if (currentProvider?.available && currentToken) {
-          fetch(`/api/providers/${currentProvider.id}/toggle-live`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              token: currentToken,
-              lat: pos.coords.latitude,
-              lng: pos.coords.longitude,
-              _updateOnly: true,
-            }),
-          }).catch(() => {})
-        }
-      },
+      (pos) => updatePosition(pos.coords.latitude, pos.coords.longitude),
       () => {},
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
     )
 
     watchIdRef.current = id
-
     return () => {
       if (watchIdRef.current !== null) {
         navigator.geolocation.clearWatch(watchIdRef.current)
@@ -445,116 +239,17 @@ export default function ChambitaPage() {
     }
   }, [currentProvider?.available, currentProvider?.id, currentToken])
 
-  // ---- Auto-scroll chat ----
+  // ---- Fix navigation guards (run in microtask to avoid cascading render) ----
   useEffect(() => {
-    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
-  }, [messages])
-
-  // ---- Fetch shared locations ----
-  const fetchSharedLocations = useCallback(async () => {
-    try {
-      const res = await fetch('/api/shared-locations')
-      if (res.ok) {
-        const data = await res.json()
-        setSharedLocations(data)
-      }
-    } catch { /* ignore */ }
-  }, [])
-
-  // Auto-refresh shared locations every 10s
-  useEffect(() => {
-    fetchSharedLocations()
-    const interval = setInterval(fetchSharedLocations, 10000)
-    return () => clearInterval(interval)
-  }, [fetchSharedLocations])
-
-  // ---- Update location sharing to use client session ----
-  const openShareLocation = (providerId: string) => {
-    setShareTargetProviderId(providerId)
-    if (currentClient) {
-      setShareClientName(currentClient.name)
-      setShareClientPhoto(currentClient.photo)
-    } else {
-      setShareClientName('')
-      setShareClientPhoto(null)
+    if ((view === 'driver-panel' || view === 'driver-edit') && !currentProvider) {
+      queueMicrotask(() => setView('home'))
     }
-    setShareLocationOpen(true)
-  }
-  const handleShareLocation = async (providerId: string) => {
-    if (!userLat || !userLng) {
-      toast.error('Activa tu ubicación GPS para compartir')
-      return
-    }
-    if (!shareClientName.trim()) {
-      toast.error('Ingresa tu nombre')
-      return
-    }
-    setSharingLocation(true)
-    try {
-      const res = await fetch('/api/shared-locations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          clientName: shareClientName.trim(),
-          clientPhoto: shareClientPhoto,
-          providerId,
-          lat: userLat,
-          lng: userLng,
-          address: 'Ubicación actual del cliente',
-        }),
-      })
-      if (res.ok) {
-        toast.success('Ubicación compartida con el conductor')
-        setShareLocationOpen(false)
-        setShareClientName('')
-        setShareClientPhoto(null)
-        fetchSharedLocations()
-      } else {
-        toast.error('Error al compartir ubicación')
-      }
-    } catch {
-      toast.error('Error de conexión')
-    }
-    setSharingLocation(false)
-  }
+  }, [view, currentProvider])
 
-  // ---- Navigation helpers ----
-  const goProviders = useCallback((cat: string) => {
-    setSelectedCategory(cat)
-    setFilterCategory(cat)
-    setView('providers')
-  }, [])
-
-  const goProfile = useCallback((id: string) => {
-    setSelectedProviderId(id)
-    setView('profile')
-  }, [])
-
-  const goForumDetail = useCallback((id: string) => {
-    setSelectedForumId(id)
-    setView('forumDetail')
-  }, [])
-
-  const goBack = useCallback(() => {
-    if (view === 'profile' || view === 'forumDetail') setView('providers')
-    else if (view === 'editprofile') setView('mypanel')
-    else if (view === 'clientRegister') setView('clientLogin')
-    else if (view === 'clientPanel') setView('welcome')
-    else if (view === 'clientLogin') setView('welcome')
-    else if (view === 'providers') setView('map')
-    else if (view === 'map') setView('welcome')
-    else setView('welcome')
-  }, [view])
-
-  // ---- API helpers ----
-  const fetchProviders = useCallback(async (category?: string | null, onlyAvailable?: boolean, search?: string) => {
-    queueMicrotask(() => setLoading(true))
+  // ---- Fetch providers ----
+  const fetchProviders = useCallback(async () => {
     try {
       const params = new URLSearchParams()
-      if (category && category !== 'all') params.set('category', category)
-      if (onlyAvailable) params.set('available', 'true')
-      if (search) params.set('search', search)
-      // Geolocalización: siempre enviar posición del usuario
       if (userLat != null && userLng != null) {
         params.set('lat', String(userLat))
         params.set('lng', String(userLng))
@@ -562,7 +257,6 @@ export default function ChambitaPage() {
       const res = await fetch(`/api/providers/nearby?${params.toString()}`)
       if (res.ok) {
         const data = await res.json()
-        // Ordenar por distancia
         if (userLat != null && userLng != null && Array.isArray(data)) {
           data.sort((a: Provider, b: Provider) => {
             const dA = Math.sqrt(Math.pow((a.lat || 0) - userLat, 2) + Math.pow((a.lng || 0) - userLng, 2))
@@ -573,136 +267,19 @@ export default function ChambitaPage() {
         setProviders(data)
       }
     } catch { /* ignore */ }
-    setLoading(false)
   }, [userLat, userLng])
 
-  const fetchProviderDetail = useCallback(async (id: string) => {
-    queueMicrotask(() => setLoading(true))
-    try {
-      const res = await fetch(`/api/providers/${id}`)
-      if (res.ok) {
-        const data = await res.json()
-        setProviderDetail(data)
-      }
-    } catch { /* ignore */ }
-    setLoading(false)
-  }, [])
-
-  const fetchForums = useCallback(async () => {
-    queueMicrotask(() => setLoading(true))
-    try {
-      const res = await fetch('/api/forums')
-      if (res.ok) {
-        const data = await res.json()
-        setForums(data)
-      }
-    } catch { /* ignore */ }
-    setLoading(false)
-  }, [])
-
-  const fetchForumDetail = useCallback(async (id: string) => {
-    queueMicrotask(() => setLoading(true))
-    try {
-      const res = await fetch(`/api/forums/${id}`)
-      if (res.ok) {
-        const data = await res.json()
-        setForumDetail(data)
-      }
-    } catch { /* ignore */ }
-    setLoading(false)
-  }, [])
-
-  const fetchMessages = useCallback(async (providerId: string, clientId?: string) => {
-    try {
-      const params = new URLSearchParams({
-        user1Type: 'client', user1Id: clientId || currentClient?.id || 'guest',
-        user2Type: 'provider', user2Id: providerId,
-      })
-      const res = await fetch(`/api/messages/conversation?${params.toString()}`)
-      if (res.ok) {
-        const data = await res.json()
-        setMessages(data)
-      }
-    } catch { /* ignore */ }
-  }, [currentClient])
-
-  // ---- Real-time chat polling (every 3s when chat is open) ----
+  // ---- Auto-refresh providers on home view every 8 seconds ----
   useEffect(() => {
-    if (chatOpen && chatTarget) {
-      const clientId = currentClient?.id || 'guest'
-      chatPollRef.current = setInterval(() => {
-        fetchMessages(chatTarget.id, clientId)
-      }, 3000)
-    } else {
-      if (chatPollRef.current) {
-        clearInterval(chatPollRef.current)
-        chatPollRef.current = null
-      }
-    }
-    return () => {
-      if (chatPollRef.current) {
-        clearInterval(chatPollRef.current)
-        chatPollRef.current = null
-      }
-    }
-  }, [chatOpen, chatTarget, currentClient, fetchMessages])
-
-  // ---- Fix setView during render: redirect from mypanel/clientPanel if not authenticated ----
-  useEffect(() => {
-    if (view === 'mypanel' && !currentProvider) setView('login')
-  }, [view, currentProvider])
-
-  useEffect(() => {
-    if (view === 'editprofile' && !currentProvider) setView('login')
-  }, [view, currentProvider])
-
-  useEffect(() => {
-    if (view === 'clientPanel' && !currentClient) setView('clientLogin')
-  }, [view, currentClient])
-
-  // ---- Load data on view change ----
-  useEffect(() => {
-    if (view === 'map') void fetchProviders(filterCategory, availableOnly, searchQuery || undefined)
-    else if (view === 'providers') void fetchProviders(filterCategory, availableOnly, searchQuery || undefined)
-    else if (view === 'profile' && selectedProviderId) void fetchProviderDetail(selectedProviderId)
-    else if (view === 'forums') void fetchForums()
-    else if (view === 'forumDetail' && selectedForumId) void fetchForumDetail(selectedForumId)
-    else if (view === 'mypanel' && currentProvider?.id) void fetchProviderDetail(currentProvider.id)
-  }, [view])
-
-  useEffect(() => {
-    if (view === 'map' || view === 'providers') {
-      void fetchProviders(filterCategory, availableOnly, searchQuery || undefined)
-    }
-  }, [filterCategory, availableOnly, searchQuery])
-
-  // ---- REAL-TIME: Auto-refresh providers on map every 8 seconds ----
-  useEffect(() => {
-    if (view !== 'map') return
-    const interval = setInterval(() => {
-      void fetchProviders(filterCategory, availableOnly, searchQuery || undefined)
-    }, 8000)
+    if (view !== 'home') return
+    const interval = setInterval(fetchProviders, 8000)
     return () => clearInterval(interval)
-  }, [view, filterCategory, availableOnly, searchQuery, fetchProviders])
+  }, [view, fetchProviders])
 
-  useEffect(() => {
-    if (view === 'mypanel' && selectedProviderId) {
-      void fetchProviderDetail(selectedProviderId)
-    }
-  }, [selectedProviderId])
+  // =============================================
+  // HANDLERS
+  // =============================================
 
-  // ---- When profile loads, update mypanel provider if it's the same ----
-  useEffect(() => {
-    if (view === 'mypanel' && providerDetail && currentProvider && providerDetail.id === currentProvider.id) {
-      queueMicrotask(() => setCurrentProvider(providerDetail))
-      sessionRef.current = { provider: providerDetail, token: currentToken }
-      try {
-        localStorage.setItem('chambita_session', JSON.stringify({ provider: providerDetail, token: currentToken }))
-      } catch { /* ignore */ }
-    }
-  }, [providerDetail])
-
-  // ---- Handlers ----
   const handleLogin = async () => {
     setLoginError('')
     if (!loginPhone || !loginPin) {
@@ -719,10 +296,11 @@ export default function ChambitaPage() {
       if (res.ok && data.success) {
         setCurrentProvider(data.provider)
         setCurrentToken(data.token)
-        localStorage.setItem('chambita_session', JSON.stringify({ provider: data.provider, token: data.token }))
+        localStorage.setItem('flota_session', JSON.stringify({ provider: data.provider, token: data.token }))
         toast.success('¡Bienvenido de vuelta!')
-        setSelectedProviderId(data.provider.id)
-        setView('map')
+        setView('driver-panel')
+        setLoginPhone('')
+        setLoginPin('')
       } else {
         setLoginError(data.error || 'Error al iniciar sesión')
       }
@@ -732,34 +310,22 @@ export default function ChambitaPage() {
   }
 
   const handleRegister = async () => {
-    // Step 1 validation
-    if (regStep === 1) {
-      if (!regForm.name.trim()) { toast.error('El nombre es obligatorio'); return }
-      if (!regForm.phone.trim()) { toast.error('El teléfono es obligatorio'); return }
-      if (!regForm.pin.trim() || regForm.pin.length < 4) { toast.error('El PIN debe tener al menos 4 dígitos'); return }
-      if (regForm.pin !== regForm.confirmPin) { toast.error('Los PINs no coinciden'); return }
-      setRegStep(2)
-      return
+    if (!regForm.name.trim()) { toast.error('El nombre es obligatorio'); return }
+    if (!regForm.phone.trim()) { toast.error('El teléfono es obligatorio'); return }
+    if (!regForm.pin.trim() || regForm.pin.length < 4 || regForm.pin.length > 6) {
+      toast.error('El PIN debe tener entre 4 y 6 dígitos'); return
     }
-    // Step 2 validation
-    if (regStep === 2) {
-      if (!regForm.serviceCategory) { toast.error('Selecciona una categoría de servicio'); return }
-      setRegStep(3)
-      return
-    }
-    // Step 3 - Submit
+    if (regForm.pin !== regForm.confirmPin) { toast.error('Los PINs no coinciden'); return }
+
+    setRegistering(true)
     try {
       const payload: Record<string, unknown> = {
         name: regForm.name.trim(),
         phone: regForm.phone.trim(),
         pin: regForm.pin.trim(),
-        serviceCategory: regForm.serviceCategory,
-        vehicleType: regForm.vehicleType || 'carro_moderno',
-        businessName: regForm.businessName.trim() || undefined,
-        bio: regForm.bio.trim() || undefined,
-        services: regForm.services.split(',').map((s) => s.trim()).filter(Boolean),
-        priceRange: regForm.priceRange.trim() || undefined,
-        schedule: regForm.schedule.trim() || undefined,
+        carBrand: regForm.carBrand.trim() || undefined,
+        carModel: regForm.carModel.trim() || undefined,
+        bio: regForm.services.trim() || undefined,
       }
       if (regPhoto) payload.photo = regPhoto
       if (regCarPhotos[0]) payload.carPhoto1 = regCarPhotos[0]
@@ -773,8 +339,8 @@ export default function ChambitaPage() {
       })
       const data = await res.json()
       if (res.ok || data.alreadyExists) {
-        toast.success('¡Registro exitoso! Iniciando sesión...')
-        // Auto-login after register
+        toast.success('¡Registro exitoso!')
+        // Auto-login
         try {
           const loginRes = await fetch('/api/providers/login', {
             method: 'POST',
@@ -785,14 +351,11 @@ export default function ChambitaPage() {
           if (loginRes.ok && loginData.success) {
             setCurrentProvider(loginData.provider)
             setCurrentToken(loginData.token)
-            localStorage.setItem('chambita_session', JSON.stringify({ provider: loginData.provider, token: loginData.token }))
-            setSelectedProviderId(loginData.provider.id)
+            localStorage.setItem('flota_session', JSON.stringify({ provider: loginData.provider, token: loginData.token }))
           }
         } catch { /* ignore */ }
-        setView('map')
-        // Reset form
-        setRegStep(1)
-        setRegForm({ name: '', businessName: '', phone: '', pin: '', confirmPin: '', serviceCategory: '', vehicleType: '', bio: '', services: '', priceRange: '', schedule: '' })
+        setView('driver-panel')
+        setRegForm({ name: '', phone: '', pin: '', confirmPin: '', carBrand: '', carModel: '', services: '' })
         setRegPhoto(null)
         setRegCarPhotos([])
       } else {
@@ -801,6 +364,7 @@ export default function ChambitaPage() {
     } catch {
       toast.error('Error de conexión')
     }
+    setRegistering(false)
   }
 
   const handleToggleLive = async () => {
@@ -815,9 +379,8 @@ export default function ChambitaPage() {
       const data = await res.json()
       if (res.ok && data.success) {
         setCurrentProvider(data.provider)
-        localStorage.setItem('chambita_session', JSON.stringify({ provider: data.provider, token: currentToken }))
-        toast.success(data.available ? '🟢 ¡Estás en vivo!' : '⚫ Te has desconectado')
-        fetchProviderDetail(currentProvider.id)
+        localStorage.setItem('flota_session', JSON.stringify({ provider: data.provider, token: currentToken }))
+        toast.success(data.available ? '🟢 ¡Estás en vivo en el mapa!' : '⚫ Te has desconectado')
       } else {
         toast.error(data.error || 'Error al cambiar estado')
       }
@@ -845,9 +408,9 @@ export default function ChambitaPage() {
       if (res.ok) {
         const updated = await res.json()
         setCurrentProvider(updated)
-        localStorage.setItem('chambita_session', JSON.stringify({ provider: updated, token: currentToken }))
+        localStorage.setItem('flota_session', JSON.stringify({ provider: updated, token: currentToken }))
         toast.success('Perfil actualizado correctamente')
-        setView('mypanel')
+        setView('driver-panel')
       } else {
         const data = await res.json()
         toast.error(data.error || 'Error al guardar')
@@ -857,2711 +420,934 @@ export default function ChambitaPage() {
     }
   }
 
-  const handleSendMessage = async () => {
-    if (!chatTarget || !chatMessage.trim()) return
-    try {
-      await fetch('/api/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: chatMessage.trim(),
-          senderType: 'client', senderId: currentClient?.id || 'guest',
-          receiverType: 'provider', receiverId: chatTarget.id,
-        }),
-      })
-      setChatMessage('')
-      fetchMessages(chatTarget.id, currentClient?.id || 'guest')
-    } catch {
-      toast.error('Error al enviar mensaje')
-    }
-  }
-
-  const handleSubmitReview = async () => {
-    if (!providerDetail || reviewRating === 0) return
-    try {
-      await fetch('/api/reviews', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          targetType: 'provider', targetId: providerDetail.id,
-          reviewerType: 'client', reviewerId: currentClient?.id || 'guest',
-          rating: reviewRating, comment: reviewComment,
-          ...reviewBadges,
-        }),
-      })
-      toast.success('¡Reseña enviada! Gracias por tu opinión')
-      setReviewOpen(false)
-      setReviewRating(0)
-      setReviewComment('')
-      setReviewBadges({ punctual: false, respectful: false, careful: false, recommended: false })
-      fetchProviderDetail(providerDetail.id)
-    } catch {
-      toast.error('Error al enviar reseña')
-    }
-  }
-
-  const handleNewPost = async () => {
-    if (!selectedForumId || !newPostTitle.trim() || !newPostContent.trim() || !newPostAuthor.trim()) {
-      toast.error('Nombre, título y contenido son obligatorios')
-      return
-    }
-    try {
-      await fetch(`/api/forums/${selectedForumId}/posts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          authorName: newPostAuthor.trim(),
-          authorPhone: newPostAuthorPhone.trim() || undefined,
-          title: newPostTitle.trim(),
-          content: newPostContent.trim(),
-        }),
-      })
-      toast.success('¡Publicación creada!')
-      setNewPostOpen(false)
-      setNewPostTitle('')
-      setNewPostContent('')
-      setNewPostAuthor('')
-      setNewPostAuthorPhone('')
-      fetchForumDetail(selectedForumId)
-    } catch {
-      toast.error('Error al crear publicación')
-    }
-  }
-
   const handleLogout = () => {
     setCurrentProvider(null)
     setCurrentToken(null)
-    localStorage.removeItem('chambita_session')
-    // Also clear client session
-    setCurrentClient(null)
-    localStorage.removeItem('chambita_client')
+    localStorage.removeItem('flota_session')
     toast.success('Sesión cerrada')
-    setView('welcome')
+    setView('home')
   }
 
-  // ---- Client login handler ----
-  const handleClientLogin = async () => {
-    setClientLoginError('')
-    if (!clientLoginPhone.trim()) {
-      setClientLoginError('El teléfono es obligatorio')
-      return
-    }
-    try {
-      const res = await fetch('/api/clients/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: clientLoginPhone.trim() }),
-      })
-      const data = await res.json()
-      if (res.ok && data.success) {
-        const client = { id: data.client.id, name: data.client.name, phone: data.client.phone, photo: data.client.photo }
-        setCurrentClient(client)
-        localStorage.setItem('chambita_client', JSON.stringify(client))
-        toast.success(`¡Bienvenido, ${data.client.name}!`)
-        setView('map')
-        setClientLoginPhone('')
-      } else {
-        setClientLoginError(data.error || 'Error al iniciar sesión')
-      }
-    } catch {
-      setClientLoginError('Error de conexión')
-    }
-  }
-
-  // ---- Client register handler ----
-  const handleClientRegister = async () => {
-    if (!clientRegisterForm.name.trim() || !clientRegisterForm.phone.trim()) {
-      toast.error('Nombre y teléfono son obligatorios')
-      return
-    }
-    setClientRegistering(true)
-    try {
-      const res = await fetch('/api/clients/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: clientRegisterForm.name.trim(),
-          phone: clientRegisterForm.phone.trim(),
-          photo: clientRegisterPhoto,
-        }),
-      })
-      const data = await res.json()
-      if (res.ok && data.success) {
-        const client = { id: data.client.id, name: data.client.name, phone: data.client.phone, photo: data.client.photo }
-        setCurrentClient(client)
-        localStorage.setItem('chambita_client', JSON.stringify(client))
-        toast.success(data.alreadyExists ? `¡Bienvenido de vuelta, ${data.client.name}!` : '¡Registro exitoso!')
-        setView('map')
-        setClientRegisterForm({ name: '', phone: '' })
-        setClientRegisterPhoto(null)
-      } else {
-        toast.error(data.error || 'Error al registrarse')
-      }
-    } catch {
-      toast.error('Error de conexión')
-    }
-    setClientRegistering(false)
-  }
-
-  // ---- Client logout handler ----
-  const handleClientLogout = () => {
-    setCurrentClient(null)
-    localStorage.removeItem('chambita_client')
-    toast.success('Sesión de cliente cerrada')
-    setView('welcome')
-  }
-
-  // Open chat with provider
-  const openChat = (provider: Provider) => {
-    setChatTarget(provider)
-    setChatOpen(true)
-    // Use client ID if logged in, otherwise 'guest'
-    const clientId = currentClient?.id || 'guest'
-    fetchMessages(provider.id, clientId)
-  }
-
-  // File to base64 helper
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      // Compress image before converting to base64 (max 400px, quality 70)
-      const img = new Image()
-      const canvas = document.createElement('canvas')
-      const MAX_SIZE = 400
-      const QUALITY = 0.7
-
-      img.onload = () => {
-        let w = img.width
-        let h = img.height
-        if (w > MAX_SIZE || h > MAX_SIZE) {
-          if (w > h) { h = (h * MAX_SIZE) / w; w = MAX_SIZE }
-          else { w = (w * MAX_SIZE) / h; h = MAX_SIZE }
-        }
-        canvas.width = w
-        canvas.height = h
-        const ctx = canvas.getContext('2d')
-        if (!ctx) { reject(new Error('No canvas context')); return }
-        ctx.drawImage(img, 0, 0, w, h)
-        resolve(canvas.toDataURL('image/jpeg', QUALITY))
-      }
-      img.onerror = reject
-      img.src = URL.createObjectURL(file)
+  const openEdit = () => {
+    if (!currentProvider) return
+    setEditForm({
+      name: currentProvider.name,
+      phone: currentProvider.phone,
+      carBrand: currentProvider.carBrand || '',
+      carModel: currentProvider.carModel || '',
+      services: currentProvider.bio || '',
     })
+    setEditPhotos({})
+    setEditPin('')
+    setView('driver-edit')
   }
 
   // =============================================
   // RENDER VIEWS
   // =============================================
 
-  // ---- STAR RATING COMPONENT ----
-  const StarRating = ({ rating, onRate, size = 18 }: { rating: number; onRate?: (r: number) => void; size?: number }) => (
-    <div className="flex items-center gap-0.5">
-      {[1, 2, 3, 4, 5].map((i) => (
-        <Star
-          key={i}
-          className={cn(
-            'transition-colors',
-            i <= rating ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300',
-            onRate && 'cursor-pointer hover:scale-110'
-          )}
-          size={size}
-          onClick={() => onRate?.(i)}
-        />
-      ))}
-    </div>
-  )
-
-  // ---- AVATAR COMPONENT ----
-  const ProviderAvatar = ({ provider, size = 40 }: { provider: Provider; size?: number }) => {
-    const cat = CATEGORIES[provider.serviceCategory]
-    return (
-      <Avatar style={{ width: size, height: size, minWidth: size }} className="rounded-full">
-        <AvatarImage src={provider.photo || undefined} alt={provider.name} />
-        <AvatarFallback style={{ backgroundColor: cat?.color || '#ea580c' }} className="text-white font-semibold">
-          {provider.name.charAt(0).toUpperCase()}
-        </AvatarFallback>
-      </Avatar>
-    )
-  }
-
-  // ---- Floating Logo (always visible) ----
-  const FloatingLogo = () => (
-    <div
-      className="fixed z-[99999] flex items-center justify-center"
-      style={{ top: view === 'map' ? 8 : 12, right: 12 }}
-      onClick={() => view !== 'welcome' && goBack()}
-    >
-      <img
-        src="/logo-chambita-sm.png"
-        alt="Chambita"
-        className="w-10 h-10 rounded-lg shadow-md cursor-pointer hover:scale-105 transition-transform"
-        style={{ backgroundColor: 'white' }}
+  // ---- HOME VIEW (Map + floating buttons) ----
+  const renderHome = () => (
+    <div className="relative w-full h-screen">
+      {/* Full-screen Map */}
+      <MapView
+        providers={providers}
+        userLat={userLat}
+        userLng={userLng}
+        onProviderClick={(p) => setSelectedProvider(p)}
+        onPhotoClick={(src) => setLightboxSrc(src)}
       />
+
+      {/* Floating Header */}
+      <div className="fixed top-0 left-0 right-0 z-[9999] pointer-events-none">
+        <div className="pointer-events-auto mx-3 mt-3">
+          <div className="flex items-center gap-2 bg-white/95 backdrop-blur-md rounded-2xl px-4 py-2.5 shadow-lg border border-gray-100">
+            <Car className="w-5 h-5" style={{ color: BRAND_COLOR }} />
+            <span className="font-bold text-sm tracking-tight" style={{ color: BRAND_COLOR }}>
+              Flota de Autos
+            </span>
+            {currentProvider && (
+              <button
+                onClick={() => setView('driver-panel')}
+                className="ml-auto flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full"
+                style={{ backgroundColor: BRAND_COLOR_LIGHT, color: BRAND_COLOR }}
+              >
+                <MapPin className="w-3 h-3" />
+                Mi Panel
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Floating Action Buttons */}
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] flex gap-3">
+        <motion.button
+          whileTap={{ scale: 0.95 }}
+          onClick={() => setView('driver-login')}
+          className="flex flex-col items-center gap-1 bg-white rounded-2xl px-5 py-3 shadow-xl border border-gray-100 hover:shadow-2xl transition-shadow"
+        >
+          <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-lg" style={{ backgroundColor: BRAND_COLOR }}>
+            <Car className="w-5 h-5" />
+          </div>
+          <span className="text-xs font-semibold text-gray-700">Conductor</span>
+        </motion.button>
+
+        <motion.button
+          whileTap={{ scale: 0.95 }}
+          onClick={() => setView('doctor')}
+          className="flex flex-col items-center gap-1 bg-white rounded-2xl px-5 py-3 shadow-xl border border-gray-100 hover:shadow-2xl transition-shadow"
+        >
+          <div className="w-10 h-10 rounded-full bg-green-500 flex items-center justify-center text-white text-lg">
+            <Stethoscope className="w-5 h-5" />
+          </div>
+          <span className="text-xs font-semibold text-gray-700">Doctor</span>
+        </motion.button>
+
+        <motion.button
+          whileTap={{ scale: 0.95 }}
+          onClick={() => setView('cliente')}
+          className="flex flex-col items-center gap-1 bg-white rounded-2xl px-5 py-3 shadow-xl border border-gray-100 hover:shadow-2xl transition-shadow"
+        >
+          <div className="w-10 h-10 rounded-full bg-amber-500 flex items-center justify-center text-white text-lg">
+            <Users className="w-5 h-5" />
+          </div>
+          <span className="text-xs font-semibold text-gray-700">Cliente</span>
+        </motion.button>
+      </div>
+
+      {/* Provider Profile Overlay */}
+      {selectedProvider && (
+        <div
+          onClick={() => setSelectedProvider(null)}
+          className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl w-[92%] max-w-[420px] max-h-[85vh] overflow-hidden shadow-2xl flex flex-col"
+          >
+            {/* Cover Header */}
+            <div className="h-24 relative" style={{ background: `linear-gradient(135deg, ${BRAND_COLOR}, ${BRAND_COLOR}cc)` }}>
+              <button
+                onClick={() => setSelectedProvider(null)}
+                className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/25 text-white flex items-center justify-center text-sm backdrop-blur-sm hover:bg-white/40 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <div className="absolute -bottom-9 left-5 w-[72px] h-[72px] rounded-full border-4 border-white overflow-hidden shadow-lg" style={{ backgroundColor: BRAND_COLOR }}>
+                {selectedProvider.photo ? (
+                  <img src={selectedProvider.photo} alt={selectedProvider.name} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-white text-2xl font-bold">
+                    {selectedProvider.name.charAt(0).toUpperCase()}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto pt-12 px-5 pb-4">
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">{selectedProvider.name}</h2>
+                  {(selectedProvider.carBrand || selectedProvider.carModel) && (
+                    <p className="text-sm text-gray-500 mt-0.5">
+                      {selectedProvider.carBrand}{selectedProvider.carBrand && selectedProvider.carModel ? ' ' : ''}{selectedProvider.carModel}
+                    </p>
+                  )}
+                </div>
+                <div className={cn(
+                  'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold',
+                  selectedProvider.available ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                )}>
+                  <div className={cn(
+                    'w-2 h-2 rounded-full',
+                    selectedProvider.available ? 'bg-green-500 animate-pulse' : 'bg-gray-400'
+                  )} />
+                  {selectedProvider.available ? 'EN VIVO' : 'Desconectado'}
+                </div>
+              </div>
+
+              {/* Service info */}
+              {selectedProvider.bio && (
+                <p className="text-sm text-gray-600 mb-4 leading-relaxed">{selectedProvider.bio}</p>
+              )}
+
+              {/* Info Grid */}
+              <div className="grid grid-cols-2 gap-2 mb-4">
+                <div className="bg-gray-50 rounded-xl p-3">
+                  <div className="text-[11px] text-gray-400 mb-0.5">📞 Teléfono</div>
+                  <div className="text-sm font-semibold text-gray-900">{formatPhone(selectedProvider.phone)}</div>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-3">
+                  <div className="text-[11px] text-gray-400 mb-0.5">⭐ Calificación</div>
+                  <div className="text-sm font-semibold text-gray-900">{selectedProvider.rating.toFixed(1)}</div>
+                </div>
+              </div>
+
+              {/* Car Photos */}
+              {([selectedProvider.carPhoto1, selectedProvider.carPhoto2, selectedProvider.carPhoto3].filter(Boolean) as string[]).length > 0 && (
+                <div className="mb-2">
+                  <h3 className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
+                    Fotos del Auto ({[selectedProvider.carPhoto1, selectedProvider.carPhoto2, selectedProvider.carPhoto3].filter(Boolean).length})
+                  </h3>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[selectedProvider.carPhoto1, selectedProvider.carPhoto2, selectedProvider.carPhoto3].filter(Boolean).map((photo, i) => (
+                      <div
+                        key={i}
+                        className="aspect-square rounded-xl overflow-hidden bg-gray-100 cursor-pointer hover:opacity-90 transition-opacity"
+                        onClick={() => setLightboxSrc(photo)}
+                      >
+                        <img src={photo || ''} alt={`Auto ${i + 1}`} className="w-full h-full object-cover" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Bottom Call Button */}
+            <div className="p-4 border-t border-gray-100 bg-white">
+              <a
+                href={`tel:${selectedProvider.phone}`}
+                onClick={() => setSelectedProvider(null)}
+                className="flex items-center justify-center gap-2 w-full h-12 rounded-2xl bg-green-500 hover:bg-green-600 text-white font-semibold text-sm transition-colors no-underline"
+              >
+                <Phone className="w-4 h-4" />
+                Llamar al Conductor
+              </a>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Lightbox */}
+      {lightboxSrc && (
+        <div
+          onClick={() => setLightboxSrc(null)}
+          className="fixed inset-0 z-[10001] flex items-center justify-center bg-black/90"
+        >
+          <img src={lightboxSrc} alt="Foto" className="max-w-[95%] max-h-[90vh] object-contain rounded-lg" />
+          <button
+            onClick={() => setLightboxSrc(null)}
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 text-white flex items-center justify-center"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+      )}
     </div>
   )
 
-  // ===========================
-  // WELCOME VIEW
-  // ===========================
-  const renderWelcome = () => (
-    <motion.div variants={staggerContainer} initial="initial" animate="animate" className="flex flex-col gap-6 pb-8">
-      {/* Hero Section */}
-      <div className="text-center pt-4 pb-2 px-4">
-        <motion.div
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ duration: 0.5 }}
-          className="inline-flex items-center justify-center w-24 h-24 rounded-2xl bg-white shadow-lg mb-4 overflow-hidden"
-        >
-          <img src="/logo-chambita.png" alt="Chambita" className="w-full h-full object-contain" />
-        </motion.div>
-        <h1 className="text-3xl md:text-4xl font-bold text-gray-900 tracking-tight">
-          <span className="text-orange-600">Chambi</span>ta
-        </h1>
-        <p className="text-gray-500 mt-2 text-sm md:text-base">
-          Tu plataforma de servicios móviles
-        </p>
-        {/* GPS Status Badge */}
-        <div className="mt-3 flex items-center justify-center gap-2">
-          {geoLoading ? (
-            <Badge variant="outline" className="gap-1.5 px-3 py-1 text-xs border-yellow-300 bg-yellow-50 text-yellow-700">
-              <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
-              Obteniendo ubicación GPS...
-            </Badge>
-          ) : geoError ? (
-            <Badge variant="outline" className="gap-1.5 px-3 py-1 text-xs border-orange-300 bg-orange-50 text-orange-600">
-              <MapPin size={12} />
-              {geoError}
-            </Badge>
-          ) : userLat != null ? (
-            <Badge variant="outline" className="gap-1.5 px-3 py-1 text-xs border-green-300 bg-green-50 text-green-700">
-              <span className="w-2 h-2 rounded-full bg-green-500" />
-              GPS Activo
-            </Badge>
-          ) : null}
-        </div>
-      </div>
-
-      {/* Search Bar */}
-      <div className="px-4">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-          <Input
-            placeholder="Buscar proveedor, servicio..."
-            className="pl-10 h-12 rounded-xl bg-white border-gray-200 text-base"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && searchQuery.trim()) {
-                setFilterCategory(null)
-                setSelectedCategory(null)
-                setView('providers')
-              }
-            }}
-          />
-        </div>
-      </div>
-
-      {/* Category Grid */}
-      <div className="px-4">
-        <h2 className="text-lg font-semibold text-gray-800 mb-3">¿Qué necesitas?</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-          {Object.entries(CATEGORIES).map(([key, cat]) => (
-            <motion.div key={key} variants={staggerItem}>
-              <Card
-                className="cursor-pointer hover:shadow-md transition-all duration-200 border-0 bg-white overflow-hidden group"
-                onClick={() => goProviders(key)}
-                style={{ gap: 0, padding: 0 }}
-              >
-                <div
-                  className="h-1.5"
-                  style={{ backgroundColor: cat.color }}
-                />
-                <CardContent className="p-2.5 md:p-4 flex flex-col items-center text-center gap-1.5 md:gap-2">
-                  <span className="text-2xl md:text-3xl group-hover:scale-110 transition-transform">{cat.emoji}</span>
-                  <span className="font-semibold text-gray-800 text-[10px] md:text-xs leading-tight">{cat.label}</span>
-                  <span className="text-[9px] md:text-[10px] text-gray-500 leading-tight hidden md:block">{cat.desc}</span>
-                </CardContent>
-              </Card>
-            </motion.div>
-          ))}
-        </div>
-      </div>
-
-      {/* CTA Buttons - SIMPLIFIED */}
-      <div className="px-4 flex flex-col gap-3">
-        <Button
-          className="h-14 text-lg rounded-xl font-bold bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-200"
-          onClick={() => setView('map')}
-        >
-          <MapPin className="mr-2" size={22} />
-          Buscar Servicios
-        </Button>
-        <div className="flex gap-3">
-          <Button
-            className="flex-1 h-12 text-base rounded-xl font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-200"
-            onClick={() => {
-              if (currentClient) { setView('map') }
-              else { setView('clientLogin') }
-            }}
-          >
-            <User className="mr-2" size={20} />
-            Soy Cliente
-          </Button>
-          <Button
-            className="flex-1 h-12 text-base rounded-xl font-semibold bg-orange-600 hover:bg-orange-700 text-white shadow-lg shadow-orange-200"
-            onClick={() => setView('register')}
-          >
-            <Briefcase className="mr-2" size={20} />
-            Soy Proveedor
-          </Button>
-        </div>
-        {/* Subtle text links for secondary actions */}
-        <div className="flex items-center justify-center gap-4 pt-1">
-          <button
-            className="text-sm text-orange-600 hover:text-orange-700 font-medium"
-            onClick={() => setView('login')}
-          >
-            Iniciar Sesión
+  // ---- DRIVER REGISTER VIEW ----
+  const renderDriverRegister = () => (
+    <motion.div
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+      className="min-h-screen bg-gray-50"
+    >
+      {/* Header */}
+      <div className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-100">
+        <div className="flex items-center gap-3 px-4 py-3">
+          <button onClick={() => setView('home')} className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
+            <ArrowLeft className="w-4 h-4 text-gray-700" />
           </button>
-          <span className="text-gray-300">|</span>
-          <button
-            className="text-sm text-gray-500 hover:text-gray-700 font-medium"
-            onClick={() => setView('forums')}
-          >
-            Comunidad
-          </button>
+          <h1 className="text-lg font-bold text-gray-900">Registro de Conductor</h1>
         </div>
       </div>
 
-      {/* How it works */}
-      <div className="px-4 mt-2">
-        <Separator className="mb-6" />
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">¿Cómo funciona?</h2>
-        <div className="flex flex-col gap-4">
-          {[
-            { icon: <Shield className="text-orange-600" size={24} />, step: '1', title: 'Regístrate', desc: 'Regístrate con tu teléfono y un PIN seguro' },
-            { icon: <Edit className="text-orange-600" size={24} />, step: '2', title: 'Completa tu perfil', desc: 'Agrega tu información y sube fotos de tu negocio' },
-            { icon: <Zap className="text-orange-600" size={24} />, step: '3', title: 'Activa tu servicio', desc: 'Activa tu estado y recibe clientes de inmediato' },
-          ].map((item) => (
-            <div key={item.step} className="flex items-start gap-3">
-              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-orange-100 text-orange-600 font-bold text-sm shrink-0">
-                {item.step}
-              </div>
-              <div>
-                <h3 className="font-semibold text-gray-800">{item.title}</h3>
-                <p className="text-sm text-gray-500">{item.desc}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </motion.div>
-  )
-
-  // ===========================
-  // PROVIDERS VIEW
-  // ===========================
-  const renderProviders = () => (
-    <motion.div variants={fadeVariants} initial="initial" animate="animate" exit="exit" className="flex flex-col min-h-[calc(100vh-4rem)]">
-      {/* Header */}
-      <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b px-4 py-3">
-        <div className="flex items-center gap-3 mb-3">
-          <Button variant="ghost" size="icon" className="shrink-0" onClick={goBack}>
-            <ArrowLeft size={20} />
-          </Button>
-          <h1 className="text-lg font-bold text-gray-900 truncate">
-            {selectedCategory ? `${CATEGORIES[selectedCategory]?.emoji} ${CATEGORIES[selectedCategory]?.label}` : 'Todos los Proveedores'}
-          </h1>
-        </div>
-
-        {/* Search */}
-        <div className="relative mb-3">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-          <Input
-            placeholder="Buscar..."
-            className="pl-9 h-9 text-sm rounded-lg"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
-
-        {/* Category chips */}
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-          <Badge
-            variant={filterCategory === null ? 'default' : 'outline'}
-            className={cn(
-              'cursor-pointer shrink-0 rounded-full px-3 text-xs font-medium transition-colors',
-              filterCategory === null ? 'bg-orange-600 text-white hover:bg-orange-700 border-orange-600' : 'hover:bg-orange-50 text-gray-600'
-            )}
-            onClick={() => setFilterCategory(null)}
-          >
-            Todos
-          </Badge>
-          {Object.entries(CATEGORIES).map(([key, cat]) => (
-            <Badge
-              key={key}
-              variant={filterCategory === key ? 'default' : 'outline'}
-              className={cn(
-                'cursor-pointer shrink-0 rounded-full px-3 text-xs font-medium transition-colors',
-                filterCategory === key ? 'text-white hover:opacity-90 border-transparent' : 'hover:bg-orange-50 text-gray-600',
-                filterCategory === key ? '' : ''
-              )}
-              style={filterCategory === key ? { backgroundColor: cat.color } : {}}
-              onClick={() => setFilterCategory(key)}
-            >
-              {cat.emoji} {cat.label}
-            </Badge>
-          ))}
-        </div>
-
-        {/* Available toggle */}
-        <div className="flex items-center gap-2 mt-3">
-          <Switch checked={availableOnly} onCheckedChange={setAvailableOnly} />
-          <span className="text-sm text-gray-600">Solo disponibles ahora</span>
-        </div>
-      </div>
-
-      {/* Provider List */}
-      <div className="flex-1 p-4">
-        {/* Pull-to-refresh visual hint */}
-        {loading && (
-          <div className="flex items-center justify-center py-2 mb-2">
-            <div className="flex items-center gap-2 text-sm text-gray-400">
-              <div className="animate-spin rounded-full h-4 w-4 border-2 border-orange-400 border-t-transparent" />
-              Actualizando...
-            </div>
-          </div>
-        )}
-        {!loading && providers.length > 0 && (
-          <div className="flex items-center justify-center py-1 mb-2">
-            <span className="text-[11px] text-gray-300">Desliza para actualizar</span>
-          </div>
-        )}
-        {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[1, 2, 3].map((i) => (
-              <Card key={i} className="p-4">
-                <div className="flex items-center gap-3 mb-3">
-                  <Skeleton className="h-10 w-10 rounded-full" />
-                  <div className="flex-1">
-                    <Skeleton className="h-4 w-24 mb-1" />
-                    <Skeleton className="h-3 w-16" />
-                  </div>
-                </div>
-                <Skeleton className="h-3 w-full mb-2" />
-                <Skeleton className="h-3 w-3/4" />
-              </Card>
-            ))}
-          </div>
-        ) : providers.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-4">
-              <Search className="text-gray-400" size={28} />
-            </div>
-            <p className="text-gray-500 font-medium">No hay proveedores en esta categoría aún</p>
-            <p className="text-gray-400 text-sm mt-1">Prueba con otra categoría o busca algo diferente</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {providers.map((p) => {
-              const cat = CATEGORIES[p.serviceCategory]
-              const services = p.services ? (typeof p.services === 'string' ? JSON.parse(p.services) : p.services) : []
-              return (
-                <Card key={p.id} className="p-4 hover:shadow-md transition-shadow border-0 bg-white shadow-sm" style={{ gap: 0 }}>
-                  <div className="flex items-start gap-3">
-                    <div className="relative">
-                      <ProviderAvatar provider={p} size={44} />
-                      <div className={cn(
-                        'absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white',
-                        p.available ? 'bg-green-500' : 'bg-gray-400'
-                      )} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-semibold text-gray-900 truncate text-sm">{p.name}</h3>
-                        <Badge
-                          className="shrink-0 text-[10px] px-1.5 py-0 text-white border-0 rounded"
-                          style={{ backgroundColor: cat?.color || '#ea580c' }}
-                        >
-                          {cat?.emoji} {cat?.label}
-                        </Badge>
-                      </div>
-                      {p.businessName && p.businessName !== p.name && (
-                        <p className="text-xs text-gray-500 truncate">{p.businessName}</p>
-                      )}
-                      <div className="flex items-center gap-2 mt-1">
-                        <StarRating rating={Math.round(p.rating)} size={13} />
-                        <span className="text-xs text-gray-400">{p.rating.toFixed(1)}</span>
-                        {p.available && (
-                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-green-300 text-green-700 bg-green-50">
-                            EN VIVO
-                          </Badge>
-                        )}
-                      </div>
-                      {/* Distancia GPS */}
-                      {userLat != null && userLng != null && p.lat != null && p.lng != null && (
-                        <div className="flex items-center gap-1 mt-1 text-[11px] text-blue-600 font-medium">
-                          <MapPin size={11} />
-                          {getDistanceKm(userLat, userLng, p.lat, p.lng)}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="mt-3 flex flex-wrap gap-1">
-                    {services.slice(0, 3).map((s: string, i: number) => (
-                      <Badge key={i} variant="secondary" className="text-[10px] px-2 py-0 bg-gray-100 text-gray-600">
-                        {s}
-                      </Badge>
-                    ))}
-                    {services.length > 3 && (
-                      <Badge variant="secondary" className="text-[10px] px-2 py-0 bg-gray-100 text-gray-600">
-                        +{services.length - 3}
-                      </Badge>
-                    )}
-                  </div>
-
-                  {p.priceRange && (
-                    <div className="flex items-center gap-1 mt-2 text-xs text-gray-500">
-                      <span className="font-medium text-orange-600">{p.priceRange}</span>
-                    </div>
-                  )}
-
-                  {p.schedule && (
-                    <div className="flex items-center gap-1 mt-1 text-xs text-gray-500">
-                      <Clock size={12} />
-                      <span>{p.schedule}</span>
-                    </div>
-                  )}
-
-                  {p.bio && (
-                    <p className="text-xs text-gray-500 mt-2 line-clamp-2 leading-relaxed">{p.bio}</p>
-                  )}
-
-                  <div className="flex gap-2 mt-3">
-                    <Button
-                      size="sm"
-                      className="flex-1 h-9 bg-green-600 hover:bg-green-700 text-white text-xs rounded-lg"
-                      asChild
-                    >
-                      <a href={`tel:${formatPhone(p.phone)}`}>
-                        <Phone size={14} className="mr-1" /> Llamar
-                      </a>
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="flex-1 h-9 text-xs rounded-lg border-orange-200 text-orange-700 hover:bg-orange-50"
-                      onClick={() => goProfile(p.id)}
-                    >
-                      Ver Perfil <ChevronRight size={14} className="ml-1" />
-                    </Button>
-                  </div>
-                </Card>
-              )
-            })}
-          </div>
-        )}
-      </div>
-    </motion.div>
-  )
-
-  // ===========================
-  // PROFILE VIEW
-  // ===========================
-  const renderProfile = () => {
-    if (loading || !providerDetail) {
-      return (
-        <div className="p-4 flex flex-col items-center justify-center min-h-[50vh]">
-          <Skeleton className="h-8 w-48 mb-4" />
-          <Skeleton className="h-20 w-20 rounded-full mb-4" />
-          <Skeleton className="h-4 w-32 mb-2" />
-          <Skeleton className="h-4 w-48" />
-        </div>
-      )
-    }
-
-    const p = providerDetail
-    const cat = CATEGORIES[p.serviceCategory]
-    const services = p.services ? (typeof p.services === 'string' ? JSON.parse(p.services) : p.services) : []
-    const routes = [
-      p.route1From && p.route1To ? `${p.route1From} → ${p.route1To}` : null,
-      p.route2From && p.route2To ? `${p.route2From} → ${p.route2To}` : null,
-      p.route3From && p.route3To ? `${p.route3From} → ${p.route3To}` : null,
-    ].filter(Boolean)
-    const photos = [p.carPhoto1, p.carPhoto2, p.carPhoto3].filter(Boolean)
-
-    return (
-      <motion.div variants={fadeVariants} initial="initial" animate="animate" exit="exit" className="flex flex-col min-h-[calc(100vh-4rem)]">
-        {/* Header */}
-        <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b px-4 py-3 flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="shrink-0" onClick={goBack}>
-            <ArrowLeft size={20} />
-          </Button>
-          <h1 className="text-lg font-bold text-gray-900 truncate">Perfil del Proveedor</h1>
-        </div>
-
-        <ScrollArea className="flex-1">
-          <div className="pb-28">
-            {/* Cover + Avatar */}
-            <div className="relative">
-              <div
-                className="h-32 md:h-40"
-                style={{ background: `linear-gradient(135deg, ${cat?.color || '#ea580c'}, ${cat?.color || '#ea580c'}99)` }}
-              />
-              <div className="absolute -bottom-10 left-4">
-                <div className="relative">
-                  <ProviderAvatar provider={p} size={80} />
-                  <div className={cn(
-                    'absolute bottom-1 right-1 w-4 h-4 rounded-full border-2 border-white',
-                    p.available ? 'bg-green-500' : 'bg-gray-400'
-                  )} />
-                </div>
-              </div>
-            </div>
-
-            <div className="px-4 pt-14">
-              {/* Name and badge */}
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900">{p.name}</h2>
-                  {p.businessName && p.businessName !== p.name && (
-                    <p className="text-sm text-gray-500">{p.businessName}</p>
-                  )}
-                </div>
-                <Badge
-                  className="shrink-0 text-xs px-3 py-1 text-white border-0 rounded-full"
-                  style={{ backgroundColor: cat?.color || '#ea580c' }}
-                >
-                  {cat?.emoji} {cat?.label}
-                </Badge>
-              </div>
-
-              {/* Status + Rating */}
-              <div className="flex items-center gap-4 mt-3">
-                <div className="flex items-center gap-1">
-                  <div className={cn(
-                    'w-2.5 h-2.5 rounded-full',
-                    p.available ? 'bg-green-500 animate-pulse' : 'bg-gray-400'
-                  )} />
-                  <span className={cn('text-sm font-medium', p.available ? 'text-green-700' : 'text-gray-500')}>
-                    {p.available ? 'EN VIVO' : 'Desconectado'}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <StarRating rating={Math.round(p.rating)} size={16} />
-                  <span className="text-sm font-medium text-gray-700">{p.rating.toFixed(1)}</span>
-                </div>
-                <span className="text-sm text-gray-500">{p.totalJobs} servicios</span>
-              </div>
-
-              {/* Info sections */}
-              <div className="mt-6 space-y-4">
-                {p.bio && (
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-700 mb-1">Acerca de</h3>
-                    <p className="text-sm text-gray-600 leading-relaxed">{p.bio}</p>
-                  </div>
-                )}
-
-                {services.length > 0 && (
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-700 mb-2">Servicios</h3>
-                    <div className="flex flex-wrap gap-2">
-                      {services.map((s: string, i: number) => (
-                        <Badge key={i} variant="secondary" className="text-xs px-2.5 py-1 bg-orange-50 text-orange-700">
-                          {s}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-2 gap-3">
-                  {p.priceRange && (
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <span className="text-xs text-gray-500 flex items-center gap-1"><span className="font-semibold">💰</span> Precio</span>
-                      <p className="text-sm font-semibold text-gray-800 mt-0.5">{p.priceRange}</p>
-                    </div>
-                  )}
-                  {p.schedule && (
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <span className="text-xs text-gray-500 flex items-center gap-1"><Clock size={12} /> Horario</span>
-                      <p className="text-sm font-semibold text-gray-800 mt-0.5">{p.schedule}</p>
-                    </div>
-                  )}
-                  {p.vehicleType && (
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <span className="text-xs text-gray-500 flex items-center gap-1"><span className="font-semibold">🚗</span> Vehículo</span>
-                      <p className="text-sm font-semibold text-gray-800 mt-0.5">{VEHICLE_TYPES[p.vehicleType] || p.vehicleType}</p>
-                    </div>
-                  )}
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <span className="text-xs text-gray-500 flex items-center gap-1"><Phone size={12} /> Teléfono</span>
-                    <p className="text-sm font-semibold text-gray-800 mt-0.5">{formatPhone(p.phone)}</p>
-                  </div>
-                </div>
-
-                {routes.length > 0 && (
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-700 mb-2">Rutas frecuentes</h3>
-                    <div className="space-y-2">
-                      {routes.map((r, i) => (
-                        <div key={i} className="flex items-center gap-2 bg-gray-50 rounded-lg p-3">
-                          <MapPin size={16} className="text-orange-600 shrink-0" />
-                          <span className="text-sm text-gray-700">{r}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {p.notes && (
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-700 mb-1">Notas</h3>
-                    <p className="text-sm text-gray-600 leading-relaxed">{p.notes}</p>
-                  </div>
-                )}
-
-                {photos.length > 0 && (
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-700 mb-2">Fotos</h3>
-                    <div className="grid grid-cols-3 gap-2">
-                      {photos.map((photo, i) => (
-                        <div key={i} className="aspect-square rounded-lg overflow-hidden bg-gray-100 cursor-pointer hover:opacity-90 transition-opacity" onClick={() => photo && setLightboxSrc(photo)}>
-                          <img src={photo || ''} alt={`Foto ${i + 1}`} className="w-full h-full object-cover" />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </ScrollArea>
-
-        {/* Sticky Action Buttons */}
-        <div className="fixed bottom-16 left-0 right-0 bg-white/95 backdrop-blur-md border-t p-3 z-20" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
-          <div className="flex gap-2 max-w-lg mx-auto">
-            <Button
-              className="flex-1 h-12 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl"
-              asChild
-            >
-              <a href={`tel:${formatPhone(p.phone)}`}>
-                <Phone size={18} className="mr-1" /> Llamar
-              </a>
-            </Button>
-            <Button
-              className="flex-1 h-12 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-xl"
-              onClick={() => openChat(p)}
-            >
-              <MessageCircle size={18} className="mr-1" /> Mensaje
-            </Button>
-            <Button
-              className="h-12 px-4 bg-yellow-500 hover:bg-yellow-600 text-white font-semibold rounded-xl"
-              onClick={() => setReviewOpen(true)}
-            >
-              <Star size={18} />
-            </Button>
-          </div>
-        </div>
-      </motion.div>
-    )
-  }
-
-  // ===========================
-  // REGISTER VIEW
-  // ===========================
-  const renderRegister = () => {
-    const stepTitles = ['Datos básicos', 'Tu servicio', 'Personalización']
-
-    return (
-      <motion.div variants={fadeVariants} initial="initial" animate="animate" exit="exit" className="flex flex-col min-h-[calc(100vh-4rem)]">
-        {/* Header */}
-        <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b px-4 py-3 flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="shrink-0" onClick={goBack}>
-            <ArrowLeft size={20} />
-          </Button>
-          <div className="flex-1">
-            <h1 className="text-lg font-bold text-gray-900">Inscripción de Proveedor</h1>
-            <p className="text-xs text-gray-500">Paso {regStep} de 3 — {stepTitles[regStep - 1]}</p>
-          </div>
-        </div>
-
-        {/* Progress */}
-        <div className="px-4 pt-4">
-          <Progress value={(regStep / 3) * 100} className="h-2 bg-orange-100" />
-          <div className="flex justify-between mt-1.5">
-            {[1, 2, 3].map((s) => (
-              <span key={s} className={cn('text-[10px] font-medium', s <= regStep ? 'text-orange-600' : 'text-gray-400')}>
-                {stepTitles[s - 1]}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        <ScrollArea className="flex-1 px-4 py-6">
-          <div className="max-w-md mx-auto space-y-4">
-            {/* Step 1: Basic data */}
-            {regStep === 1 && (
-              <motion.div variants={staggerContainer} initial="initial" animate="animate" className="space-y-4">
-                <div className="text-center mb-2">
-                  <div className="inline-flex w-14 h-14 rounded-full bg-orange-100 items-center justify-center mb-2">
-                    <User className="text-orange-600" size={28} />
-                  </div>
-                  <p className="text-sm text-gray-500">Ingresa tus datos personales</p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium text-gray-700">Nombre completo *</Label>
-                  <Input
-                    placeholder="Tu nombre"
-                    value={regForm.name}
-                    onChange={(e) => setRegForm({ ...regForm, name: e.target.value })}
-                    className="h-11 rounded-lg"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium text-gray-700">Nombre del negocio (opcional)</Label>
-                  <Input
-                    placeholder="Ej: El Rápido"
-                    value={regForm.businessName}
-                    onChange={(e) => setRegForm({ ...regForm, businessName: e.target.value })}
-                    className="h-11 rounded-lg"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium text-gray-700">Teléfono *</Label>
-                  <Input
-                    placeholder="5XXXXXXX"
-                    type="tel"
-                    value={regForm.phone}
-                    onChange={(e) => setRegForm({ ...regForm, phone: e.target.value.replace(/\D/g, '') })}
-                    className="h-11 rounded-lg"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium text-gray-700">PIN de seguridad *</Label>
-                  <Input
-                    placeholder="4-6 dígitos"
-                    type="password"
-                    maxLength={6}
-                    value={regForm.pin}
-                    onChange={(e) => setRegForm({ ...regForm, pin: e.target.value.replace(/\D/g, '') })}
-                    className="h-11 rounded-lg"
-                  />
-                  <p className="text-xs text-gray-400">Crea un PIN de 4 a 6 dígitos para acceder a tu cuenta</p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium text-gray-700">Confirmar PIN *</Label>
-                  <Input
-                    placeholder="Repite tu PIN"
-                    type="password"
-                    maxLength={6}
-                    value={regForm.confirmPin}
-                    onChange={(e) => setRegForm({ ...regForm, confirmPin: e.target.value.replace(/\D/g, '') })}
-                    className={cn(
-                      'h-11 rounded-lg',
-                      regForm.confirmPin && regForm.confirmPin !== regForm.pin ? 'border-red-500' : ''
-                    )}
-                  />
-                  {regForm.confirmPin && regForm.confirmPin !== regForm.pin && (
-                    <p className="text-xs text-red-500">Los PINs no coinciden</p>
-                  )}
-                </div>
-              </motion.div>
-            )}
-
-            {/* Step 2: Service */}
-            {regStep === 2 && (
-              <motion.div variants={staggerContainer} initial="initial" animate="animate" className="space-y-4">
-                <div className="text-center mb-2">
-                  <div className="inline-flex w-14 h-14 rounded-full bg-orange-100 items-center justify-center mb-2">
-                    <Briefcase className="text-orange-600" size={28} />
-                  </div>
-                  <p className="text-sm text-gray-500">Cuéntanos sobre tu servicio</p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium text-gray-700">Categoría de servicio *</Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {Object.entries(CATEGORIES).map(([key, cat]) => (
-                      <Card
-                        key={key}
-                        className={cn(
-                          'cursor-pointer p-3 transition-all text-center border-2',
-                          regForm.serviceCategory === key ? 'border-orange-500 bg-orange-50' : 'border-transparent bg-white hover:border-orange-200'
-                        )}
-                        style={{ gap: 0 }}
-                        onClick={() => setRegForm({ ...regForm, serviceCategory: key, vehicleType: '' })}
-                      >
-                        <span className="text-2xl">{cat.emoji}</span>
-                        <p className="text-xs font-medium text-gray-700 mt-1">{cat.label}</p>
-                      </Card>
-                    ))}
-                  </div>
-                </div>
-
-                {regForm.serviceCategory && CATEGORY_VEHICLES[regForm.serviceCategory]?.length > 0 && (
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium text-gray-700">Tipo de vehículo</Label>
-                    <Select
-                      value={regForm.vehicleType}
-                      onValueChange={(v) => setRegForm({ ...regForm, vehicleType: v })}
-                    >
-                      <SelectTrigger className="h-11 w-full rounded-lg">
-                        <SelectValue placeholder="Selecciona tu vehículo" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {CATEGORY_VEHICLES[regForm.serviceCategory].map((vt) => (
-                          <SelectItem key={vt} value={vt}>{VEHICLE_TYPES[vt]}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium text-gray-700">Breve descripción</Label>
-                  <Textarea
-                    placeholder="Describe tu negocio..."
-                    value={regForm.bio}
-                    onChange={(e) => setRegForm({ ...regForm, bio: e.target.value })}
-                    className="rounded-lg resize-none"
-                    rows={3}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium text-gray-700">Servicios que ofreces</Label>
-                  <Input
-                    placeholder="Ej: Corte, Barba, Afeitado (separados por coma)"
-                    value={regForm.services}
-                    onChange={(e) => setRegForm({ ...regForm, services: e.target.value })}
-                    className="h-11 rounded-lg"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium text-gray-700">Rango de precios</Label>
-                  <Input
-                    placeholder="Ej: 5-15 CUP, Por cotizar"
-                    value={regForm.priceRange}
-                    onChange={(e) => setRegForm({ ...regForm, priceRange: e.target.value })}
-                    className="h-11 rounded-lg"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium text-gray-700">Horario de trabajo</Label>
-                  <Input
-                    placeholder="Ej: Lun-Sáb 7am-9pm"
-                    value={regForm.schedule}
-                    onChange={(e) => setRegForm({ ...regForm, schedule: e.target.value })}
-                    className="h-11 rounded-lg"
-                  />
-                </div>
-              </motion.div>
-            )}
-
-            {/* Step 3: Personalization */}
-            {regStep === 3 && (
-              <motion.div variants={staggerContainer} initial="initial" animate="animate" className="space-y-4">
-                <div className="text-center mb-2">
-                  <div className="inline-flex w-14 h-14 rounded-full bg-orange-100 items-center justify-center mb-2">
-                    <Camera className="text-orange-600" size={28} />
-                  </div>
-                  <p className="text-sm text-gray-500">Personaliza tu perfil (opcional)</p>
-                </div>
-
-                {/* Profile photo */}
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium text-gray-700">Foto de perfil</Label>
-                  <div className="flex items-center gap-3">
-                    {regPhoto ? (
-                      <div className="relative">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={regPhoto} alt="Preview" className="w-16 h-16 rounded-full object-cover border-2 border-orange-200" />
-                        <button
-                          className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center"
-                          onClick={() => setRegPhoto(null)}
-                        >
-                          <X size={12} className="text-white" />
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center">
-                        <User className="text-gray-400" size={24} />
-                      </div>
-                    )}
-                    <label className="cursor-pointer">
-                      <Input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0]
-                          if (file) setRegPhoto(await fileToBase64(file))
-                        }}
-                      />
-                      <div className="flex items-center gap-2 px-3 py-2 border rounded-lg hover:bg-gray-50 text-sm text-gray-600">
-                        <Camera size={16} /> Subir foto
-                      </div>
-                    </label>
-                  </div>
-                </div>
-
-                {/* Vehicle photos */}
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium text-gray-700">Fotos del vehículo/negocio (máx. 3)</Label>
-                  <div className="flex gap-3 flex-wrap">
-                    {regCarPhotos.map((photo, i) => (
-                      <div key={i} className="relative">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={photo} alt={`Vehículo ${i + 1}`} className="w-20 h-20 rounded-lg object-cover border border-gray-200" />
-                        <button
-                          className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center"
-                          onClick={() => setRegCarPhotos(regCarPhotos.filter((_, idx) => idx !== i))}
-                        >
-                          <X size={12} className="text-white" />
-                        </button>
-                      </div>
-                    ))}
-                    {regCarPhotos.length < 3 && (
-                      <label className="cursor-pointer">
-                        <Input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={async (e) => {
-                            const file = e.target.files?.[0]
-                            if (file) {
-                              const b64 = await fileToBase64(file)
-                              setRegCarPhotos([...regCarPhotos, b64])
-                            }
-                          }}
-                        />
-                        <div className="w-20 h-20 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center hover:border-orange-400 hover:bg-orange-50 transition-colors">
-                          <Plus size={20} className="text-gray-400" />
-                        </div>
-                      </label>
-                    )}
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </div>
-        </ScrollArea>
-
-        {/* Footer buttons */}
-        <div className="sticky bottom-0 bg-white border-t p-4">
-          <div className="flex gap-3 max-w-md mx-auto">
-            {regStep > 1 && (
-              <Button
-                variant="outline"
-                className="flex-1 h-11 rounded-xl"
-                onClick={() => setRegStep(regStep - 1)}
-              >
-                Anterior
-              </Button>
-            )}
-            <Button
-              className="flex-1 h-11 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-xl"
-              onClick={handleRegister}
-            >
-              {regStep === 3 ? '✅ Inscribirme' : 'Siguiente'}
-            </Button>
-          </div>
-        </div>
-      </motion.div>
-    )
-  }
-
-  // ===========================
-  // LOGIN VIEW
-  // ===========================
-  const renderLogin = () => (
-    <motion.div variants={fadeVariants} initial="initial" animate="animate" exit="exit" className="flex flex-col min-h-[calc(100vh-4rem)]">
-      {/* Header */}
-      <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b px-4 py-3 flex items-center gap-3">
-        <Button variant="ghost" size="icon" className="shrink-0" onClick={goBack}>
-          <ArrowLeft size={20} />
-        </Button>
-        <h1 className="text-lg font-bold text-gray-900">Iniciar Sesión</h1>
-      </div>
-
-      <div className="flex-1 flex flex-col items-center justify-center px-4 py-8">
-        <motion.div
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ duration: 0.4 }}
-          className="w-full max-w-sm space-y-6"
-        >
-          <div className="text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-orange-500 to-orange-700 shadow-lg mb-4">
-              <Truck className="text-white" size={32} />
-            </div>
-            <h2 className="text-xl font-bold text-gray-900">Bienvenido de vuelta</h2>
-            <p className="text-sm text-gray-500 mt-1">Ingresa tu teléfono y PIN para acceder</p>
-          </div>
-
-          <div className="space-y-4 bg-white p-6 rounded-2xl shadow-sm border">
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-gray-700">Teléfono</Label>
-              <Input
-                placeholder="5XXXXXXX"
-                type="tel"
-                value={loginPhone}
-                onChange={(e) => setLoginPhone(e.target.value.replace(/\D/g, ''))}
-                className="h-11 rounded-lg"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-gray-700">PIN</Label>
-              <Input
-                placeholder="Tu PIN de seguridad"
-                type="password"
-                value={loginPin}
-                onChange={(e) => setLoginPin(e.target.value.replace(/\D/g, ''))}
-                className="h-11 rounded-lg"
-                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-              />
-            </div>
-
-            {loginError && (
-              <motion.div
-                initial={{ opacity: 0, y: -4 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg"
-              >
-                {loginError}
-              </motion.div>
-            )}
-
-            <Button
-              className="w-full h-11 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-lg"
-              onClick={handleLogin}
-              disabled={!loginPhone || !loginPin}
-            >
-              Iniciar Sesión
-            </Button>
-          </div>
-
-          <div className="text-center">
-            <button
-              className="text-sm text-orange-600 hover:text-orange-700 font-medium"
-              onClick={() => setView('register')}
-            >
-              ¿No tienes cuenta? ¡Inscríbete aquí!
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    </motion.div>
-  )
-
-  // ===========================
-  // MY PANEL VIEW
-  // ===========================
-  const renderMyPanel = () => {
-    if (!currentProvider) {
-      return null
-    }
-
-    const providerData = providerDetail || currentProvider
-    const cat = CATEGORIES[providerData.serviceCategory]
-
-    return (
-      <motion.div variants={fadeVariants} initial="initial" animate="animate" exit="exit" className="flex flex-col min-h-[calc(100vh-4rem)]">
-        {/* Header */}
-        <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b px-4 py-3 flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="shrink-0" onClick={() => setView('welcome')}>
-            <ArrowLeft size={20} />
-          </Button>
-          <div className="flex-1">
-            <h1 className="text-lg font-bold text-gray-900">Mi Panel</h1>
-            <p className="text-xs text-gray-500">{providerData.name}</p>
-          </div>
-          <Button variant="ghost" size="icon" onClick={handleLogout} className="text-red-500 hover:text-red-600 hover:bg-red-50">
-            <LogOut size={20} />
-          </Button>
-        </div>
-
-        <ScrollArea className="flex-1 px-4 py-6">
-          <div className="max-w-md mx-auto space-y-6">
-            {/* Profile card */}
-            <Card className="p-4 border-0 shadow-md" style={{ gap: 0 }}>
-              <div className="flex items-center gap-4">
-                <div className="relative">
-                  <ProviderAvatar provider={providerData} size={56} />
-                  <div className={cn(
-                    'absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-white',
-                    providerData.available ? 'bg-green-500' : 'bg-gray-400'
-                  )} />
-                </div>
-                <div className="flex-1">
-                  <h2 className="text-lg font-bold text-gray-900">{providerData.name}</h2>
-                  {providerData.businessName && (
-                    <p className="text-sm text-gray-500">{providerData.businessName}</p>
-                  )}
-                  <Badge
-                    className="mt-1 text-xs px-2 py-0 text-white border-0 rounded"
-                    style={{ backgroundColor: cat?.color || '#ea580c' }}
-                  >
-                    {cat?.emoji} {cat?.label}
-                  </Badge>
-                </div>
-              </div>
-            </Card>
-
-            {/* BIG LIVE TOGGLE */}
-            <motion.div whileTap={{ scale: 0.97 }}>
-              <Button
-                className={cn(
-                  'w-full h-16 text-lg font-bold rounded-2xl shadow-lg transition-all',
-                  providerData.available
-                    ? 'bg-green-600 hover:bg-green-700 text-white shadow-green-200'
-                    : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
-                )}
-                onClick={handleToggleLive}
-                disabled={togglingLive}
-              >
-                {togglingLive ? (
-                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-current border-t-transparent" />
-                ) : providerData.available ? (
-                  <>
-                    <div className="w-3 h-3 rounded-full bg-white mr-2 animate-pulse" />
-                    Estoy Live — {providerData.totalJobs} servicios
-                  </>
-                ) : (
-                  <>
-                    <Zap size={24} className="mr-2" />
-                    Ir Live
-                  </>
-                )}
-              </Button>
-            </motion.div>
-
-            {/* Stats */}
-            <div className="grid grid-cols-3 gap-3">
-              <Card className="p-3 text-center border-0 shadow-sm bg-white" style={{ gap: 0 }}>
-                <Star className="mx-auto text-yellow-500 mb-1" size={20} />
-                <p className="text-lg font-bold text-gray-900">{providerData.rating.toFixed(1)}</p>
-                <p className="text-[10px] text-gray-500">Calificación</p>
-              </Card>
-              <Card className="p-3 text-center border-0 shadow-sm bg-white" style={{ gap: 0 }}>
-                <Briefcase className="mx-auto text-orange-600 mb-1" size={20} />
-                <p className="text-lg font-bold text-gray-900">{providerData.totalJobs}</p>
-                <p className="text-[10px] text-gray-500">Servicios</p>
-              </Card>
-              <Card className="p-3 text-center border-0 shadow-sm bg-white" style={{ gap: 0 }}>
-                <div className={cn(
-                  'mx-auto w-5 h-5 rounded-full mb-1',
-                  providerData.available ? 'bg-green-500' : 'bg-gray-400'
-                )} />
-                <p className="text-lg font-bold text-gray-900">
-                  {providerData.available ? 'Sí' : 'No'}
-                </p>
-                <p className="text-[10px] text-gray-500">Disponible</p>
-              </Card>
-            </div>
-
-            {/* Quick Actions */}
-            <div className="space-y-3">
-              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Acciones rápidas</h3>
-
-              <Card
-                className="cursor-pointer p-4 hover:shadow-md transition-shadow border-0 bg-white shadow-sm"
-                style={{ gap: 0 }}
-                onClick={() => {
-                  if (currentProvider) {
-                    setEditForm({
-                      name: currentProvider.name,
-                      businessName: currentProvider.businessName || '',
-                      phone: currentProvider.phone,
-                      serviceCategory: currentProvider.serviceCategory,
-                      vehicleType: currentProvider.vehicleType,
-                      bio: currentProvider.bio || '',
-                      services: (() => {
-                        try {
-                          const parsed = currentProvider.services ? (typeof currentProvider.services === 'string' ? JSON.parse(currentProvider.services) : currentProvider.services) : []
-                          return Array.isArray(parsed) ? parsed.join(', ') : ''
-                        } catch { return '' }
-                      })(),
-                      priceRange: currentProvider.priceRange || '',
-                      schedule: currentProvider.schedule || '',
-                      notes: currentProvider.notes || '',
-                    })
-                    setEditPin('')
-                    setEditPhotos({})
-                    setView('editprofile')
-                  }
+      <div className="p-4 space-y-5 max-w-md mx-auto">
+        {/* Profile Photo Upload */}
+        <div className="flex flex-col items-center gap-2 pt-2">
+          <div className="relative">
+            <Avatar className="w-24 h-24 border-4 border-white shadow-lg">
+              <AvatarImage src={regPhoto || undefined} />
+              <AvatarFallback className="text-2xl font-bold" style={{ backgroundColor: BRAND_COLOR, color: 'white' }}>
+                {regForm.name ? regForm.name.charAt(0).toUpperCase() : <Camera className="w-8 h-8" />}
+              </AvatarFallback>
+            </Avatar>
+            <label className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full flex items-center justify-center text-white shadow-md cursor-pointer" style={{ backgroundColor: BRAND_COLOR }}>
+              <Camera className="w-4 h-4" />
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0]
+                  if (file) setRegPhoto(await fileToBase64(file))
                 }}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center">
-                    <Edit className="text-orange-600" size={18} />
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-semibold text-gray-800 text-sm">Editar Perfil</p>
-                    <p className="text-xs text-gray-500">Actualiza tu información personal</p>
-                  </div>
-                  <ChevronRight size={18} className="text-gray-400" />
-                </div>
-              </Card>
-
-              <Card
-                className="cursor-pointer p-4 hover:shadow-md transition-shadow border-0 bg-white shadow-sm"
-                style={{ gap: 0 }}
-                onClick={() => {
-                  if (currentProvider) {
-                    setEditForm({
-                      name: currentProvider.name,
-                      businessName: currentProvider.businessName || '',
-                      phone: currentProvider.phone,
-                      serviceCategory: currentProvider.serviceCategory,
-                      vehicleType: currentProvider.vehicleType,
-                      bio: currentProvider.bio || '',
-                      services: (() => {
-                        try {
-                          const parsed = currentProvider.services ? (typeof currentProvider.services === 'string' ? JSON.parse(currentProvider.services) : currentProvider.services) : []
-                          return Array.isArray(parsed) ? parsed.join(', ') : ''
-                        } catch { return '' }
-                      })(),
-                      priceRange: currentProvider.priceRange || '',
-                      schedule: currentProvider.schedule || '',
-                      notes: currentProvider.notes || '',
-                    })
-                    setEditPin('')
-                    setEditPhotos({})
-                    setView('editprofile')
-                  }
-                }}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
-                    <Camera className="text-blue-600" size={18} />
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-semibold text-gray-800 text-sm">Mis Fotos</p>
-                    <p className="text-xs text-gray-500">Gestiona tu foto de perfil y fotos del negocio</p>
-                  </div>
-                  <ChevronRight size={18} className="text-gray-400" />
-                </div>
-              </Card>
-
-              <Card
-                className="cursor-pointer p-4 hover:shadow-md transition-shadow border-0 bg-white shadow-sm"
-                style={{ gap: 0 }}
-                onClick={() => setView('forums')}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center">
-                    <Star className="text-green-600" size={18} />
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-semibold text-gray-800 text-sm">Comunidad</p>
-                    <p className="text-xs text-gray-500">Participa en los foros comunitarios</p>
-                  </div>
-                  <ChevronRight size={18} className="text-gray-400" />
-                </div>
-              </Card>
-            </div>
-          </div>
-        </ScrollArea>
-      </motion.div>
-    )
-  }
-
-  // ===========================
-  // EDIT PROFILE VIEW
-  // ===========================
-  const renderEditProfile = () => {
-    if (!currentProvider) {
-      return null
-    }
-
-    return (
-      <motion.div variants={fadeVariants} initial="initial" animate="animate" exit="exit" className="flex flex-col min-h-[calc(100vh-4rem)]">
-        {/* Header */}
-        <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b px-4 py-3 flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="shrink-0" onClick={() => setView('mypanel')}>
-            <ArrowLeft size={20} />
-          </Button>
-          <h1 className="text-lg font-bold text-gray-900">Editar Perfil</h1>
-        </div>
-
-        <ScrollArea className="flex-1 px-4 py-6">
-          <div className="max-w-md mx-auto space-y-4">
-            {/* PIN verification */}
-            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
-              <Label className="text-sm font-medium text-yellow-800">Ingresa tu PIN para guardar cambios</Label>
-              <Input
-                placeholder="Tu PIN de seguridad"
-                type="password"
-                maxLength={6}
-                value={editPin}
-                onChange={(e) => setEditPin(e.target.value.replace(/\D/g, ''))}
-                className="h-11 rounded-lg mt-2"
               />
-            </div>
-
-            {/* Fields */}
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium text-gray-700">Nombre completo</Label>
-                <Input value={editForm.name || ''} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} className="h-11 rounded-lg" />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium text-gray-700">Nombre del negocio</Label>
-                <Input value={editForm.businessName || ''} onChange={(e) => setEditForm({ ...editForm, businessName: e.target.value })} className="h-11 rounded-lg" />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium text-gray-700">Teléfono</Label>
-                <Input value={editForm.phone || ''} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value.replace(/\D/g, '') })} className="h-11 rounded-lg" />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium text-gray-700">Categoría de servicio</Label>
-                <Select value={editForm.serviceCategory || ''} onValueChange={(v) => setEditForm({ ...editForm, serviceCategory: v })}>
-                  <SelectTrigger className="h-11 w-full rounded-lg"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(CATEGORIES).map(([k, c]) => (
-                      <SelectItem key={k} value={k}>{c.emoji} {c.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium text-gray-700">Tipo de vehículo</Label>
-                <Select value={editForm.vehicleType || ''} onValueChange={(v) => setEditForm({ ...editForm, vehicleType: v })}>
-                  <SelectTrigger className="h-11 w-full rounded-lg"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(VEHICLE_TYPES).map(([k, v]) => (
-                      <SelectItem key={k} value={k}>{v}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium text-gray-700">Descripción</Label>
-                <Textarea value={editForm.bio || ''} onChange={(e) => setEditForm({ ...editForm, bio: e.target.value })} className="rounded-lg resize-none" rows={3} />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium text-gray-700">Servicios (separados por coma)</Label>
-                <Input value={editForm.services || ''} onChange={(e) => setEditForm({ ...editForm, services: e.target.value })} className="h-11 rounded-lg" />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium text-gray-700">Rango de precios</Label>
-                <Input value={editForm.priceRange || ''} onChange={(e) => setEditForm({ ...editForm, priceRange: e.target.value })} className="h-11 rounded-lg" />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium text-gray-700">Horario</Label>
-                <Input value={editForm.schedule || ''} onChange={(e) => setEditForm({ ...editForm, schedule: e.target.value })} className="h-11 rounded-lg" />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium text-gray-700">Notas adicionales</Label>
-                <Textarea value={editForm.notes || ''} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} className="rounded-lg resize-none" rows={3} />
-              </div>
-            </div>
-
-            {/* Photos section */}
-            <Separator />
-            <div className="space-y-3">
-              <h3 className="text-sm font-semibold text-gray-700">Fotos</h3>
-
-              {/* Profile photo */}
-              <div className="space-y-1.5">
-                <Label className="text-sm text-gray-600">Foto de perfil</Label>
-                <div className="flex items-center gap-3">
-                  {(editPhotos.photo !== undefined ? editPhotos.photo : currentProvider.photo) ? (
-                    <div className="relative">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={(editPhotos.photo !== undefined ? editPhotos.photo : currentProvider.photo) || ''} alt="Perfil" className="w-14 h-14 rounded-full object-cover border-2 border-orange-200" />
-                      <button
-                        className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center"
-                        onClick={() => setEditPhotos({ ...editPhotos, photo: '' })}
-                      >
-                        <X size={10} className="text-white" />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center"><User size={20} className="text-gray-400" /></div>
-                  )}
-                  <label className="cursor-pointer">
-                    <Input type="file" accept="image/*" className="hidden" onChange={async (e) => {
-                      const file = e.target.files?.[0]
-                      if (file) setEditPhotos({ ...editPhotos, photo: await fileToBase64(file) })
-                    }} />
-                    <div className="flex items-center gap-1 px-3 py-2 border rounded-lg hover:bg-gray-50 text-xs text-gray-600">
-                      <Camera size={14} /> Cambiar
-                    </div>
-                  </label>
-                </div>
-              </div>
-
-              {/* Vehicle photos */}
-              {[1, 2, 3].map((n) => {
-                const key = `carPhoto${n}` as keyof typeof editPhotos
-                const current = currentProvider[key] as string | null | undefined
-                return (
-                  <div key={n} className="space-y-1.5">
-                    <Label className="text-sm text-gray-600">Foto {n} del negocio</Label>
-                    <div className="flex items-center gap-3">
-                      {(editPhotos[key] !== undefined ? editPhotos[key] : current) ? (
-                        <div className="relative">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={(editPhotos[key] !== undefined ? editPhotos[key] : current) || ''} alt={`Foto ${n}`} className="w-14 h-14 rounded-lg object-cover border border-gray-200" />
-                          <button
-                            className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center"
-                            onClick={() => setEditPhotos({ ...editPhotos, [key]: '' })}
-                          >
-                            <X size={10} className="text-white" />
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="w-14 h-14 rounded-lg bg-gray-100 flex items-center justify-center"><Camera size={16} className="text-gray-400" /></div>
-                      )}
-                      <label className="cursor-pointer">
-                        <Input type="file" accept="image/*" className="hidden" onChange={async (e) => {
-                          const file = e.target.files?.[0]
-                          if (file) setEditPhotos({ ...editPhotos, [key]: await fileToBase64(file) })
-                        }} />
-                        <div className="flex items-center gap-1 px-3 py-2 border rounded-lg hover:bg-gray-50 text-xs text-gray-600">
-                          <Camera size={14} /> Subir
-                        </div>
-                      </label>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
+            </label>
           </div>
-        </ScrollArea>
-
-        {/* Save button */}
-        <div className="sticky bottom-0 bg-white border-t p-4">
-          <Button
-            className="w-full h-12 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-xl"
-            onClick={handleSaveProfile}
-            disabled={!editPin}
-          >
-            <Check size={18} className="mr-2" />
-            Guardar Cambios
-          </Button>
-        </div>
-      </motion.div>
-    )
-  }
-
-  // ===========================
-  // FORUMS VIEW
-  // ===========================
-  const renderForums = () => (
-    <motion.div variants={fadeVariants} initial="initial" animate="animate" exit="exit" className="flex flex-col min-h-[calc(100vh-4rem)]">
-      {/* Header */}
-      <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b px-4 py-3 flex items-center gap-3">
-        <Button variant="ghost" size="icon" className="shrink-0" onClick={goBack}>
-          <ArrowLeft size={20} />
-        </Button>
-        <div className="flex-1">
-          <h1 className="text-lg font-bold text-gray-900">Foros Comunitarios</h1>
-          <p className="text-xs text-gray-500">Comparte y conecta con la comunidad</p>
-        </div>
-      </div>
-
-      <div className="flex-1 p-4">
-        {loading ? (
-          <div className="space-y-4">
-            {[1, 2, 3].map((i) => (
-              <Card key={i} className="p-4"><Skeleton className="h-4 w-32 mb-2" /><Skeleton className="h-3 w-full" /></Card>
-            ))}
-          </div>
-        ) : forums.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <Users className="text-gray-300 mb-3" size={48} />
-            <p className="text-gray-500 font-medium">No hay foros disponibles</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {forums.map((forum, i) => (
-              <motion.div key={forum.id} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
-                <Card
-                  className="cursor-pointer hover:shadow-md transition-all overflow-hidden border-0 bg-white shadow-sm"
-                  style={{ gap: 0 }}
-                  onClick={() => goForumDetail(forum.id)}
-                >
-                  <div className="h-1.5" style={{ backgroundColor: forum.color }} />
-                  <CardContent className="p-4">
-                    <div className="flex items-start gap-3">
-                      <div
-                        className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0"
-                        style={{ backgroundColor: `${forum.color}15` }}
-                      >
-                        {forum.icon}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-gray-900">{forum.title}</h3>
-                        <p className="text-sm text-gray-500 mt-0.5 line-clamp-2">{forum.description}</p>
-                        <div className="flex items-center gap-3 mt-2">
-                          <Badge variant="secondary" className="text-xs bg-gray-100 text-gray-600">
-                            <MessageCircle size={12} className="mr-1" />
-                            {forum._count?.posts || forum.postsCount || 0} publicaciones
-                          </Badge>
-                          {forum.posts && forum.posts.length > 0 && (
-                            <span className="text-xs text-gray-400">
-                              Último: {timeAgo(forum.posts[0].createdAt)}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <ChevronRight size={18} className="text-gray-400 mt-1 shrink-0" />
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
-        )}
-      </div>
-    </motion.div>
-  )
-
-  // ===========================
-  // FORUM DETAIL VIEW
-  // ===========================
-  const renderForumDetail = () => {
-    if (loading || !forumDetail) {
-      return (
-        <div className="p-4">
-          <Skeleton className="h-8 w-48 mb-4" />
-          {[1, 2, 3].map((i) => (
-            <Card key={i} className="p-4 mb-3"><Skeleton className="h-4 w-32 mb-2" /><Skeleton className="h-3 w-full" /></Card>
-          ))}
-        </div>
-      )
-    }
-
-    return (
-      <motion.div variants={fadeVariants} initial="initial" animate="animate" exit="exit" className="flex flex-col min-h-[calc(100vh-4rem)]">
-        {/* Header */}
-        <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b px-4 py-3 flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="shrink-0" onClick={goBack}>
-            <ArrowLeft size={20} />
-          </Button>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-lg">{forumDetail.icon}</span>
-              <h1 className="text-lg font-bold text-gray-900 truncate">{forumDetail.title}</h1>
-            </div>
-          </div>
+          <span className="text-xs text-gray-400">Foto de perfil</span>
         </div>
 
-        <ScrollArea className="flex-1 p-4">
-          <div className="max-w-md mx-auto">
-            <p className="text-sm text-gray-500 mb-4">{forumDetail.description}</p>
-
-            {/* FAB for new post */}
-            <div className="fixed bottom-6 right-6 z-20">
-              <Button
-                className="w-14 h-14 rounded-full bg-orange-600 hover:bg-orange-700 text-white shadow-lg shadow-orange-200"
-                size="icon"
-                onClick={() => setNewPostOpen(true)}
-              >
-                <Plus size={24} />
-              </Button>
-            </div>
-
-            {/* Posts */}
-            {(!forumDetail.posts || forumDetail.posts.length === 0) ? (
-              <div className="flex flex-col items-center justify-center py-16 text-center">
-                <MessageCircle className="text-gray-300 mb-3" size={40} />
-                <p className="text-gray-500 font-medium">No hay publicaciones aún</p>
-                <p className="text-gray-400 text-sm mt-1">¡Sé el primero en publicar!</p>
-              </div>
-            ) : (
-              <div className="space-y-3 pb-20">
-                {forumDetail.posts.map((post, i) => (
-                  <motion.div
-                    key={post.id}
-                    initial={{ opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.05 }}
-                  >
-                    <Card className="p-4 border-0 bg-white shadow-sm" style={{ gap: 0 }}>
-                      {post.pinned && (
-                        <Badge className="mb-2 bg-orange-100 text-orange-700 border-orange-200 text-[10px]">
-                          📌 Fijado
-                        </Badge>
-                      )}
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-xs font-bold text-orange-700">
-                          {post.authorName.charAt(0).toUpperCase()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <span className="text-sm font-semibold text-gray-800">{post.authorName}</span>
-                          <span className="text-xs text-gray-400 ml-2">{timeAgo(post.createdAt)}</span>
-                        </div>
-                      </div>
-                      <h3 className="font-semibold text-gray-900 text-sm">{post.title}</h3>
-                      <p className="text-sm text-gray-600 mt-1 leading-relaxed whitespace-pre-wrap">{post.content}</p>
-                      <div className="flex items-center gap-1 mt-3">
-                        <button className="flex items-center gap-1 text-xs text-gray-400 hover:text-red-500 transition-colors">
-                          <Heart size={14} />
-                          {post.likes > 0 && <span>{post.likes}</span>}
-                        </button>
-                      </div>
-                    </Card>
-                  </motion.div>
-                ))}
-              </div>
-            )}
-          </div>
-        </ScrollArea>
-
-        {/* New Post Sheet */}
-        <Sheet open={newPostOpen} onOpenChange={setNewPostOpen}>
-          <SheetContent side="bottom" className="rounded-t-2xl max-h-[85vh]">
-            <SheetHeader className="px-4 pt-2">
-              <SheetTitle className="text-lg">Nueva Publicación</SheetTitle>
-              <SheetDescription>Comparte con la comunidad</SheetDescription>
-            </SheetHeader>
-            <div className="px-4 py-3 space-y-3 overflow-y-auto max-h-[60vh]">
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium text-gray-700">Tu nombre *</Label>
-                <Input
-                  placeholder="Tu nombre"
-                  value={newPostAuthor}
-                  onChange={(e) => setNewPostAuthor(e.target.value)}
-                  className="h-10 rounded-lg"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium text-gray-700">Teléfono (opcional)</Label>
-                <Input
-                  placeholder="Tu teléfono"
-                  type="tel"
-                  value={newPostAuthorPhone}
-                  onChange={(e) => setNewPostAuthorPhone(e.target.value.replace(/\D/g, ''))}
-                  className="h-10 rounded-lg"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium text-gray-700">Título *</Label>
-                <Input
-                  placeholder="Título de tu publicación"
-                  value={newPostTitle}
-                  onChange={(e) => setNewPostTitle(e.target.value)}
-                  className="h-10 rounded-lg"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium text-gray-700">Contenido *</Label>
-                <Textarea
-                  placeholder="Escribe tu publicación..."
-                  value={newPostContent}
-                  onChange={(e) => setNewPostContent(e.target.value)}
-                  className="rounded-lg resize-none"
-                  rows={5}
-                />
-              </div>
-            </div>
-            <SheetFooter className="px-4 pb-4">
-              <Button
-                className="w-full h-11 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-lg"
-                onClick={handleNewPost}
-                disabled={!newPostAuthor.trim() || !newPostTitle.trim() || !newPostContent.trim()}
-              >
-                <Send size={16} className="mr-2" /> Publicar
-              </Button>
-            </SheetFooter>
-          </SheetContent>
-        </Sheet>
-      </motion.div>
-    )
-  }
-
-  // ===========================
-  // CLIENT LOGIN VIEW
-  // ===========================
-  const renderClientLogin = () => (
-    <motion.div variants={fadeVariants} initial="initial" animate="animate" exit="exit" className="flex flex-col min-h-[calc(100vh-4rem)]">
-      {/* Header */}
-      <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b px-4 py-3 flex items-center gap-3">
-        <Button variant="ghost" size="icon" className="shrink-0" onClick={goBack}>
-          <ArrowLeft size={20} />
-        </Button>
-        <h1 className="text-lg font-bold text-gray-900">Soy Cliente — Entrar</h1>
-      </div>
-
-      <div className="flex-1 flex flex-col items-center justify-center px-4 py-8">
-        <motion.div
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ duration: 0.4 }}
-          className="w-full max-w-sm space-y-6"
-        >
-          <div className="text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 shadow-lg mb-4">
-              <User className="text-white" size={32} />
-            </div>
-            <h2 className="text-xl font-bold text-gray-900">Hola, Cliente</h2>
-            <p className="text-sm text-gray-500 mt-1">Ingresa tu teléfono para acceder</p>
+        {/* Form Fields */}
+        <div className="space-y-3">
+          <div>
+            <Label className="text-xs font-medium text-gray-500 mb-1 block">Nombre completo *</Label>
+            <Input
+              placeholder="Tu nombre"
+              value={regForm.name}
+              onChange={(e) => setRegForm({ ...regForm, name: e.target.value })}
+              className="h-11 rounded-xl"
+            />
           </div>
 
-          <div className="space-y-4 bg-white p-6 rounded-2xl shadow-sm border">
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-gray-700">Tu número de teléfono</Label>
-              <Input
-                placeholder="5XXXXXXX"
-                type="tel"
-                value={clientLoginPhone}
-                onChange={(e) => setClientLoginPhone(e.target.value.replace(/\D/g, ''))}
-                className="h-11 rounded-lg"
-                onKeyDown={(e) => e.key === 'Enter' && handleClientLogin()}
-              />
-              <p className="text-xs text-gray-400">No necesitas PIN, solo tu teléfono</p>
-            </div>
-
-            {clientLoginError && (
-              <motion.div
-                initial={{ opacity: 0, y: -4 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg"
-              >
-                {clientLoginError}
-              </motion.div>
-            )}
-
-            <Button
-              className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg"
-              onClick={handleClientLogin}
-              disabled={!clientLoginPhone}
-            >
-              Entrar
-            </Button>
+          <div>
+            <Label className="text-xs font-medium text-gray-500 mb-1 block">Teléfono *</Label>
+            <Input
+              placeholder="+53 5 1234567"
+              value={regForm.phone}
+              onChange={(e) => setRegForm({ ...regForm, phone: e.target.value })}
+              type="tel"
+              className="h-11 rounded-xl"
+            />
           </div>
 
-          <div className="text-center">
-            <p className="text-sm text-gray-500">¿No tienes cuenta?</p>
-            <button
-              className="text-sm text-blue-600 hover:text-blue-700 font-medium mt-1"
-              onClick={() => setView('clientRegister')}
-            >
-              Regístrate aquí
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    </motion.div>
-  )
-
-  // ===========================
-  // CLIENT REGISTER VIEW
-  // ===========================
-  const renderClientRegister = () => (
-    <motion.div variants={fadeVariants} initial="initial" animate="animate" exit="exit" className="flex flex-col min-h-[calc(100vh-4rem)]">
-      {/* Header */}
-      <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b px-4 py-3 flex items-center gap-3">
-        <Button variant="ghost" size="icon" className="shrink-0" onClick={goBack}>
-          <ArrowLeft size={20} />
-        </Button>
-        <h1 className="text-lg font-bold text-gray-900">Registrarse como Cliente</h1>
-      </div>
-
-      <div className="flex-1 flex flex-col items-center justify-center px-4 py-8">
-        <motion.div
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ duration: 0.4 }}
-          className="w-full max-w-sm space-y-6"
-        >
-          <div className="text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 shadow-lg mb-4">
-              <User className="text-white" size={32} />
-            </div>
-            <h2 className="text-xl font-bold text-gray-900">Crear Cuenta</h2>
-            <p className="text-sm text-gray-500 mt-1">Solo necesitas nombre y teléfono</p>
-          </div>
-
-          <div className="space-y-4 bg-white p-6 rounded-2xl shadow-sm border">
-            {/* Profile photo */}
-            <div className="flex justify-center mb-2">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs font-medium text-gray-500 mb-1 block">PIN (4-6 dígitos) *</Label>
               <div className="relative">
-                {clientRegisterPhoto ? (
-                  <div className="relative">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={clientRegisterPhoto} alt="Foto" className="w-20 h-20 rounded-full object-cover border-3 border-blue-200" />
-                    <button
-                      className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center shadow-sm"
-                      onClick={() => setClientRegisterPhoto(null)}
-                    >
-                      <X size={14} className="text-white" />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="w-20 h-20 rounded-full bg-gray-100 flex items-center justify-center border-2 border-dashed border-gray-300">
-                    <User className="text-gray-400" size={32} />
-                  </div>
-                )}
+                <Input
+                  placeholder="••••"
+                  value={regForm.pin}
+                  onChange={(e) => setRegForm({ ...regForm, pin: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+                  type={showPin ? 'text' : 'password'}
+                  className="h-11 rounded-xl pr-10"
+                />
+                <button
+                  onClick={() => setShowPin(!showPin)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
+                >
+                  {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
             </div>
-
-            <div className="flex justify-center">
-              <label className="cursor-pointer">
+            <div>
+              <Label className="text-xs font-medium text-gray-500 mb-1 block">Confirmar PIN *</Label>
+              <div className="relative">
                 <Input
+                  placeholder="••••"
+                  value={regForm.confirmPin}
+                  onChange={(e) => setRegForm({ ...regForm, confirmPin: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+                  type={showConfirmPin ? 'text' : 'password'}
+                  className={cn(
+                    'h-11 rounded-xl pr-10',
+                    regForm.confirmPin && regForm.confirmPin !== regForm.pin && 'border-red-400 focus-visible:ring-red-400'
+                  )}
+                />
+                <button
+                  onClick={() => setShowConfirmPin(!showConfirmPin)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
+                >
+                  {showConfirmPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <Separator />
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs font-medium text-gray-500 mb-1 block">Marca del auto</Label>
+              <Input
+                placeholder="Toyota"
+                value={regForm.carBrand}
+                onChange={(e) => setRegForm({ ...regForm, carBrand: e.target.value })}
+                className="h-11 rounded-xl"
+              />
+            </div>
+            <div>
+              <Label className="text-xs font-medium text-gray-500 mb-1 block">Modelo del auto</Label>
+              <Input
+                placeholder="Corolla 2020"
+                value={regForm.carModel}
+                onChange={(e) => setRegForm({ ...regForm, carModel: e.target.value })}
+                className="h-11 rounded-xl"
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-xs font-medium text-gray-500 mb-1 block">¿Qué servicio ofreces?</Label>
+            <Textarea
+              placeholder="Ej: Transporte de pasajeros La Habana-Varadero, mudanzas locales..."
+              value={regForm.services}
+              onChange={(e) => setRegForm({ ...regForm, services: e.target.value })}
+              rows={3}
+              className="rounded-xl resize-none"
+            />
+          </div>
+        </div>
+
+        {/* Car Photos */}
+        <div>
+          <Label className="text-xs font-medium text-gray-500 mb-2 block">Fotos del auto (hasta 3)</Label>
+          <div className="grid grid-cols-3 gap-2">
+            {[0, 1, 2].map((i) => (
+              <label key={i} className="cursor-pointer">
+                <input
                   type="file"
                   accept="image/*"
                   className="hidden"
                   onChange={async (e) => {
                     const file = e.target.files?.[0]
                     if (file) {
-                      try { setClientRegisterPhoto(await fileToBase64(file)) } catch { /* ignore */ }
+                      const b64 = await fileToBase64(file)
+                      const newPhotos = [...regCarPhotos]
+                      newPhotos[i] = b64
+                      setRegCarPhotos(newPhotos)
                     }
                   }}
                 />
-                <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-50 text-blue-700 text-sm font-medium hover:bg-blue-100 transition-colors">
-                  <Camera size={16} />
-                  {clientRegisterPhoto ? 'Cambiar foto' : 'Subir foto (opcional)'}
+                <div className="aspect-[4/3] rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-1 bg-gray-50 hover:border-blue-300 hover:bg-blue-50 transition-colors overflow-hidden">
+                  {regCarPhotos[i] ? (
+                    <img src={regCarPhotos[i]} alt={`Auto ${i + 1}`} className="w-full h-full object-cover" />
+                  ) : (
+                    <>
+                      <Camera className="w-5 h-5 text-gray-300" />
+                      <span className="text-[10px] text-gray-400">Foto {i + 1}</span>
+                    </>
+                  )}
                 </div>
               </label>
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-gray-700">Tu nombre *</Label>
-              <Input
-                placeholder="Ej: María"
-                value={clientRegisterForm.name}
-                onChange={(e) => setClientRegisterForm({ ...clientRegisterForm, name: e.target.value })}
-                className="h-11 rounded-lg"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-gray-700">Tu teléfono *</Label>
-              <Input
-                placeholder="5XXXXXXX"
-                type="tel"
-                value={clientRegisterForm.phone}
-                onChange={(e) => setClientRegisterForm({ ...clientRegisterForm, phone: e.target.value.replace(/\D/g, '') })}
-                className="h-11 rounded-lg"
-                onKeyDown={(e) => e.key === 'Enter' && handleClientRegister()}
-              />
-              <p className="text-xs text-gray-400">Si ya existe una cuenta con este teléfono, se iniciará sesión automáticamente</p>
-            </div>
-
-            <Button
-              className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg"
-              onClick={handleClientRegister}
-              disabled={!clientRegisterForm.name.trim() || !clientRegisterForm.phone.trim() || clientRegistering}
-            >
-              {clientRegistering ? (
-                <div className="animate-spin rounded-full h-5 w-5 border-2 border-current border-t-transparent" />
-              ) : (
-                'Registrarme'
-              )}
-            </Button>
+            ))}
           </div>
+        </div>
 
-          <div className="text-center">
-            <button
-              className="text-sm text-blue-600 hover:text-blue-700 font-medium"
-              onClick={() => setView('clientLogin')}
-            >
-              Ya tengo cuenta — Entrar
-            </button>
-          </div>
-        </motion.div>
+        {/* Submit */}
+        <Button
+          onClick={handleRegister}
+          disabled={registering}
+          className="w-full h-12 rounded-2xl text-white font-semibold text-sm shadow-lg"
+          style={{ backgroundColor: BRAND_COLOR }}
+        >
+          {registering ? 'Registrando...' : 'Crear Cuenta'}
+        </Button>
+
+        <p className="text-center text-xs text-gray-400">
+          ¿Ya tienes cuenta?{' '}
+          <button onClick={() => setView('driver-login')} className="font-semibold" style={{ color: BRAND_COLOR }}>
+            Inicia sesión
+          </button>
+        </p>
       </div>
     </motion.div>
   )
 
-  // ===========================
-  // CLIENT PANEL VIEW
-  // ===========================
-  const renderClientPanel = () => {
-    if (!currentClient) {
-      return null
-    }
+  // ---- DRIVER LOGIN VIEW ----
+  const renderDriverLogin = () => (
+    <motion.div
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+      className="min-h-screen bg-gray-50 flex flex-col"
+    >
+      {/* Header */}
+      <div className="bg-white/95 backdrop-blur-md border-b border-gray-100">
+        <div className="flex items-center gap-3 px-4 py-3">
+          <button onClick={() => setView('home')} className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
+            <ArrowLeft className="w-4 h-4 text-gray-700" />
+          </button>
+          <h1 className="text-lg font-bold text-gray-900">Iniciar Sesión</h1>
+        </div>
+      </div>
 
-    // Find shared locations for this client
-    const myLocations = sharedLocations.filter(
-      (loc) => loc.clientName === currentClient.name
-    )
+      <div className="flex-1 flex flex-col items-center justify-center p-6">
+        <div className="w-full max-w-sm space-y-6">
+          <div className="text-center">
+            <div className="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center text-white shadow-lg" style={{ backgroundColor: BRAND_COLOR }}>
+              <Car className="w-8 h-8" />
+            </div>
+            <h2 className="text-xl font-bold text-gray-900">Conductor</h2>
+            <p className="text-sm text-gray-500 mt-1">Ingresa tu teléfono y PIN</p>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs font-medium text-gray-500 mb-1 block">Teléfono</Label>
+              <Input
+                placeholder="+53 5 1234567"
+                value={loginPhone}
+                onChange={(e) => setLoginPhone(e.target.value)}
+                type="tel"
+                className="h-12 rounded-xl text-base"
+                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+              />
+            </div>
+            <div>
+              <Label className="text-xs font-medium text-gray-500 mb-1 block">PIN</Label>
+              <div className="relative">
+                <Input
+                  placeholder="••••"
+                  value={loginPin}
+                  onChange={(e) => setLoginPin(e.target.value)}
+                  type={loginShowPin ? 'text' : 'password'}
+                  className="h-12 rounded-xl text-base pr-10"
+                  onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                />
+                <button
+                  onClick={() => setLoginShowPin(!loginShowPin)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
+                >
+                  {loginShowPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {loginError && (
+            <p className="text-sm text-red-500 text-center bg-red-50 py-2 px-4 rounded-xl">{loginError}</p>
+          )}
+
+          <Button
+            onClick={handleLogin}
+            className="w-full h-12 rounded-2xl text-white font-semibold text-sm shadow-lg"
+            style={{ backgroundColor: BRAND_COLOR }}
+          >
+            Iniciar Sesión
+          </Button>
+
+          <p className="text-center text-xs text-gray-400">
+            ¿No tienes cuenta?{' '}
+            <button onClick={() => setView('driver-register')} className="font-semibold" style={{ color: BRAND_COLOR }}>
+              Regístrate aquí
+            </button>
+          </p>
+        </div>
+      </div>
+    </motion.div>
+  )
+
+  // ---- DRIVER PANEL VIEW ----
+  const renderDriverPanel = () => {
+    if (!currentProvider) return null
+    const p = currentProvider
+    const carPhotos = [p.carPhoto1, p.carPhoto2, p.carPhoto3].filter(Boolean) as string[]
 
     return (
-      <motion.div variants={fadeVariants} initial="initial" animate="animate" exit="exit" className="flex flex-col min-h-[calc(100vh-4rem)]">
+      <motion.div
+        initial={{ opacity: 0, x: 20 }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={{ opacity: 0, x: -20 }}
+        className="min-h-screen bg-gray-50"
+      >
         {/* Header */}
-        <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b px-4 py-3 flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="shrink-0" onClick={() => setView('welcome')}>
-            <ArrowLeft size={20} />
-          </Button>
-          <div className="flex-1">
-            <h1 className="text-lg font-bold text-gray-900">Mi Perfil</h1>
-            <p className="text-xs text-gray-500">Cliente</p>
+        <div className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-100">
+          <div className="flex items-center gap-3 px-4 py-3">
+            <button onClick={() => setView('home')} className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
+              <ArrowLeft className="w-4 h-4 text-gray-700" />
+            </button>
+            <h1 className="text-lg font-bold text-gray-900">Mi Panel</h1>
+            <div className="ml-auto">
+              <div className={cn(
+                'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold',
+                p.available ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+              )}>
+                <div className={cn(
+                  'w-2 h-2 rounded-full',
+                  p.available ? 'bg-green-500 animate-pulse' : 'bg-gray-400'
+                )} />
+                {p.available ? 'EN VIVO' : 'Desconectado'}
+              </div>
+            </div>
           </div>
-          <Button variant="ghost" size="icon" onClick={handleClientLogout} className="text-red-500 hover:text-red-600 hover:bg-red-50">
-            <LogOut size={20} />
-          </Button>
         </div>
 
-        <ScrollArea className="flex-1 px-4 py-6">
-          <div className="max-w-md mx-auto space-y-6">
-            {/* Profile card */}
-            <Card className="p-4 border-0 shadow-md" style={{ gap: 0 }}>
-              <div className="flex items-center gap-4">
-                <Avatar style={{ width: 56, height: 56, minWidth: 56 }} className="rounded-full">
-                  <AvatarImage src={currentClient.photo || undefined} alt={currentClient.name} />
-                  <AvatarFallback style={{ backgroundColor: '#2563eb' }} className="text-white font-semibold text-lg">
-                    {currentClient.name.charAt(0).toUpperCase()}
+        <div className="p-4 space-y-4 max-w-md mx-auto">
+          {/* Profile Card */}
+          <Card className="overflow-hidden border-0 shadow-lg">
+            <div className="h-24 relative" style={{ background: `linear-gradient(135deg, ${BRAND_COLOR}, ${BRAND_COLOR}bb)` }}>
+              <div className="absolute -bottom-10 left-5">
+                <Avatar className="w-20 h-20 border-4 border-white shadow-md">
+                  <AvatarImage src={p.photo || undefined} />
+                  <AvatarFallback className="text-2xl font-bold text-white" style={{ backgroundColor: BRAND_COLOR }}>
+                    {p.name.charAt(0).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
-                <div className="flex-1">
-                  <h2 className="text-lg font-bold text-gray-900">{currentClient.name}</h2>
-                  <p className="text-sm text-gray-500">{formatPhone(currentClient.phone)}</p>
-                  <Badge className="mt-1 text-xs px-2 py-0 text-white border-0 rounded bg-blue-600">
-                    <User size={12} className="mr-1" />
-                    Cliente
-                  </Badge>
-                </div>
               </div>
-            </Card>
-
-            {/* Quick actions */}
-            <div className="space-y-3">
-              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Acciones</h3>
-
-              <Card
-                className="cursor-pointer p-4 hover:shadow-md transition-shadow border-0 bg-white shadow-sm"
-                style={{ gap: 0 }}
-                onClick={() => setView('map')}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center">
-                    <MapPin className="text-green-600" size={18} />
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-semibold text-gray-800 text-sm">Ver Mapa</p>
-                    <p className="text-xs text-gray-500">Encuentra servicios cerca de ti</p>
-                  </div>
-                  <ChevronRight size={18} className="text-gray-400" />
-                </div>
-              </Card>
-
-              <Card
-                className="cursor-pointer p-4 hover:shadow-md transition-shadow border-0 bg-white shadow-sm"
-                style={{ gap: 0 }}
-                onClick={() => setView('forums')}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center">
-                    <Users className="text-orange-600" size={18} />
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-semibold text-gray-800 text-sm">Comunidad</p>
-                    <p className="text-xs text-gray-500">Foros comunitarios</p>
-                  </div>
-                  <ChevronRight size={18} className="text-gray-400" />
-                </div>
-              </Card>
             </div>
-
-            {/* Shared locations history */}
-            <div className="space-y-3">
-              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Ubicaciones compartidas</h3>
-              {myLocations.length === 0 ? (
-                <Card className="p-4 border-0 bg-white shadow-sm" style={{ gap: 0 }}>
-                  <p className="text-sm text-gray-500 text-center">No has compartido ubicaciones todavía</p>
-                  <p className="text-xs text-gray-400 text-center mt-1">Usa el botón "Compartir ubicación" en el mapa</p>
-                </Card>
-              ) : (
-                <div className="space-y-2">
-                  {myLocations.slice(0, 10).map((loc) => (
-                    <Card key={loc.id} className="p-3 border-0 bg-white shadow-sm" style={{ gap: 0 }}>
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
-                          <MapPin size={16} className="text-blue-600" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-800">{loc.address || 'Ubicación compartida'}</p>
-                          <p className="text-xs text-gray-400">{timeAgo(loc.createdAt)}</p>
-                        </div>
-                      </div>
-                    </Card>
-                  ))}
-                </div>
+            <CardContent className="pt-12 pb-4 px-5">
+              <h2 className="text-xl font-bold text-gray-900">{p.name}</h2>
+              {(p.carBrand || p.carModel) && (
+                <p className="text-sm text-gray-500 mt-0.5">
+                  🚗 {p.carBrand}{p.carBrand && p.carModel ? ' ' : ''}{p.carModel}
+                </p>
               )}
+              {p.bio && (
+                <p className="text-sm text-gray-600 mt-2 leading-relaxed">{p.bio}</p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Stats */}
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-white rounded-xl p-3 text-center shadow-sm border border-gray-100">
+              <Phone className="w-4 h-4 mx-auto text-gray-400 mb-1" />
+              <div className="text-xs font-semibold text-gray-900">{formatPhone(p.phone)}</div>
+              <div className="text-[10px] text-gray-400">Teléfono</div>
+            </div>
+            <div className="bg-white rounded-xl p-3 text-center shadow-sm border border-gray-100">
+              <Star className="w-4 h-4 mx-auto text-amber-400 mb-1" />
+              <div className="text-xs font-semibold text-gray-900">{p.rating.toFixed(1)}</div>
+              <div className="text-[10px] text-gray-400">Calificación</div>
+            </div>
+            <div className="bg-white rounded-xl p-3 text-center shadow-sm border border-gray-100">
+              <MapPin className="w-4 h-4 mx-auto text-gray-400 mb-1" />
+              <div className="text-xs font-semibold text-gray-900">****</div>
+              <div className="text-[10px] text-gray-400">PIN</div>
             </div>
           </div>
-        </ScrollArea>
+
+          {/* Go Live Toggle */}
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={cn(
+                    'w-10 h-10 rounded-xl flex items-center justify-center',
+                    p.available ? 'bg-green-100' : 'bg-gray-100'
+                  )}>
+                    <Navigation className={cn(
+                      'w-5 h-5',
+                      p.available ? 'text-green-600' : 'text-gray-400'
+                    )} />
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-gray-900">
+                      {p.available ? 'Estás en VIVO' : 'Ir en Vivo'}
+                    </div>
+                    <div className="text-xs text-gray-400">
+                      {p.available ? 'Los usuarios pueden verte en el mapa' : 'Aparece en el mapa en tiempo real'}
+                    </div>
+                  </div>
+                </div>
+                <Switch
+                  checked={p.available}
+                  onCheckedChange={() => handleToggleLive()}
+                  disabled={togglingLive}
+                  className="data-[state=checked]:bg-green-500"
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Car Photos */}
+          {carPhotos.length > 0 && (
+            <Card className="border-0 shadow-sm">
+              <CardContent className="p-4">
+                <h3 className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Fotos del Auto</h3>
+                <div className="grid grid-cols-3 gap-2">
+                  {carPhotos.map((photo, i) => (
+                    <div
+                      key={i}
+                      className="aspect-square rounded-xl overflow-hidden bg-gray-100 cursor-pointer"
+                      onClick={() => setLightboxSrc(photo)}
+                    >
+                      <img src={photo} alt={`Auto ${i + 1}`} className="w-full h-full object-cover" />
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Action Buttons */}
+          <div className="space-y-2">
+            <Button
+              onClick={openEdit}
+              variant="outline"
+              className="w-full h-12 rounded-2xl font-semibold text-sm"
+            >
+              <Edit className="w-4 h-4 mr-2" />
+              Editar Perfil
+            </Button>
+            <Button
+              onClick={handleLogout}
+              variant="outline"
+              className="w-full h-12 rounded-2xl font-semibold text-sm text-red-500 border-red-200 hover:bg-red-50"
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              Cerrar Sesión
+            </Button>
+          </div>
+        </div>
+
+        {/* Lightbox */}
+        {lightboxSrc && (
+          <div onClick={() => setLightboxSrc(null)} className="fixed inset-0 z-[10001] flex items-center justify-center bg-black/90">
+            <img src={lightboxSrc} alt="Foto" className="max-w-[95%] max-h-[90vh] object-contain rounded-lg" />
+            <button onClick={() => setLightboxSrc(null)} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 text-white flex items-center justify-center">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        )}
       </motion.div>
     )
   }
 
-  // ===========================
-  // MAP VIEW (PREMISA PRINCIPAL)
-  // ===========================
-  const renderMap = () => (
-    <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100dvh', zIndex: 9999 }}>
-      {/* Full-screen Map */}
-      <MapView
-        userLat={userLat}
-        userLng={userLng}
-        providers={providers}
-        categories={CATEGORIES}
-        vehicleTypes={VEHICLE_TYPES}
-        onProviderClick={goProfile}
-        onShareLocation={(providerId) => {
-          openShareLocation(providerId)
-        }}
-        onPhotoClick={(src) => setLightboxSrc(src)}
-        filterCategory={filterCategory}
-        availableOnly={availableOnly}
-        sharedLocations={sharedLocations}
-      />
-
-      {/* Floating Top Bar */}
-      <div className="absolute top-0 left-0 right-0 z-10 p-3" style={{ paddingRight: 56 }}>
-        <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-lg p-3 space-y-3">
-          {/* Top row: back + logo + title + panel */}
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9" onClick={goBack}>
-              <ArrowLeft size={18} />
-            </Button>
-            <img src="/logo-chambita-sm.png" alt="Chambita" className="w-7 h-7 rounded-lg" />
-            <div className="flex-1 flex items-center justify-center gap-2">
-              <MapPin size={16} className="text-green-600" />
-              <span className="font-bold text-gray-800 text-sm">Mapa de Servicios</span>
-              <span className="text-xs text-gray-400">({providers.length})</span>
-            </div>
-            {currentProvider && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="shrink-0 h-9 text-xs rounded-lg border-orange-200 text-orange-700 hover:bg-orange-50"
-                onClick={() => setView('mypanel')}
-              >
-                <Briefcase size={14} className="mr-1" />
-                Mi Panel
-              </Button>
-            )}
-            {!currentProvider && !currentClient && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="shrink-0 h-9 text-xs rounded-lg border-orange-200 text-orange-700 hover:bg-orange-50"
-                onClick={() => setView('register')}
-              >
-                <Plus size={14} className="mr-1" />
-                Inscríbete
-              </Button>
-            )}
-            {!currentProvider && currentClient && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="shrink-0 h-9 text-xs rounded-lg border-blue-200 text-blue-700 hover:bg-blue-50"
-                onClick={() => setView('clientPanel')}
-              >
-                <User size={14} className="mr-1" />
-                Mi Perfil
-              </Button>
-            )}
-          </div>
-
-          {/* Search input */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-            <Input
-              placeholder="Buscar proveedor..."
-              className="pl-9 h-9 text-sm rounded-xl"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  void fetchProviders(filterCategory, availableOnly, searchQuery || undefined)
-                }
-              }}
-            />
-          </div>
-
-          {/* Category chips scrollable */}
-          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-            <Badge
-              variant={filterCategory === null ? 'default' : 'outline'}
-              className={cn(
-                'cursor-pointer shrink-0 rounded-full px-3 text-xs font-medium',
-                filterCategory === null ? 'bg-green-600 text-white border-green-600' : 'hover:bg-green-50 text-gray-600'
-              )}
-              onClick={() => setFilterCategory(null)}
-            >
-              Todos
-            </Badge>
-            {Object.entries(CATEGORIES).map(([key, cat]) => (
-              <Badge
-                key={key}
-                variant={filterCategory === key ? 'default' : 'outline'}
-                className={cn(
-                  'cursor-pointer shrink-0 rounded-full px-3 text-xs font-medium',
-                  filterCategory === key ? 'text-white border-transparent' : 'hover:bg-green-50 text-gray-600',
-                )}
-                style={filterCategory === key ? { backgroundColor: cat.color } : {}}
-                onClick={() => setFilterCategory(filterCategory === key ? null : key)}
-              >
-                {cat.emoji} {cat.label}
-              </Badge>
-            ))}
-          </div>
-
-          {/* Available toggle */}
-          <div className="flex items-center gap-2">
-            <Switch checked={availableOnly} onCheckedChange={setAvailableOnly} />
-            <span className="text-xs text-gray-600">Solo disponibles ahora</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Empty state overlay when no providers found */}
-      {!loading && providers.length === 0 && (
-        <div className="absolute inset-0 z-[5] flex items-center justify-center pointer-events-none">
-          <div className="pointer-events-auto bg-white/95 backdrop-blur-md rounded-2xl shadow-lg p-6 text-center max-w-xs mx-4">
-            <div className="text-5xl mb-3">😕</div>
-            <p className="font-semibold text-gray-800 text-base">No se encontraron proveedores</p>
-            <p className="text-sm text-gray-500 mt-1 mb-4">Intenta con otros filtros o busca en otra área</p>
-            <Button
-              variant="outline"
-              className="rounded-xl border-orange-200 text-orange-700 hover:bg-orange-50"
-              onClick={() => {
-                setSearchQuery('')
-                setFilterCategory(null)
-                setAvailableOnly(false)
-              }}
-            >
-              Limpiar filtros
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Floating Bottom: provider cards preview */}
-      <div className="absolute bottom-16 left-0 right-0 z-10 pb-4 px-3">
-        <div className="flex gap-3 overflow-x-auto scrollbar-none pb-2">
-          {providers.filter(p => p.available || !availableOnly).slice(0, 8).map((p) => {
-            const cat = CATEGORIES[p.serviceCategory]
-            const dist = (userLat != null && userLng != null && p.lat && p.lng)
-              ? getDistanceKm(userLat, userLng, p.lat, p.lng)
-              : ''
-            return (
-              <Card
-                key={p.id}
-                className="shrink-0 w-44 p-3 hover:shadow-lg transition-shadow border-0 bg-white/95 backdrop-blur cursor-pointer shadow-md"
-                style={{ gap: 0 }}
-                onClick={() => goProfile(p.id)}
-              >
-                <div className="flex items-center gap-2 mb-1.5">
-                  <div
-                    className="w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0"
-                    style={{ backgroundColor: cat?.color || '#ea580c' }}
-                  >
-                    {cat?.emoji || '📍'}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="font-semibold text-gray-900 text-xs truncate">{p.name}</p>
-                    {dist && <p className="text-[10px] text-gray-400">{dist}</p>}
-                  </div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-gray-500 truncate">{cat?.label}</span>
-                  <div className={cn(
-                    'w-2 h-2 rounded-full shrink-0',
-                    p.available ? 'bg-green-500' : 'bg-gray-300'
-                  )} />
-                </div>
-              </Card>
-            )
-          })}
-        </div>
-      </div>
-    </div>
-  )
-
-  // ===========================
-  // MAIN RENDER
-  // ===========================
-  return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-
-    {/* ===========================
-        IMAGE LIGHTBOX
-        =========================== */}
-    <AnimatePresence>
-      {lightboxSrc && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[10000] bg-black/90 flex items-center justify-center"
-          onClick={() => setLightboxSrc(null)}
-        >
-          <button
-            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-colors z-10"
-            onClick={() => setLightboxSrc(null)}
-          >
-            <X size={24} />
+  // ---- DRIVER EDIT VIEW ----
+  const renderDriverEdit = () => (
+    <motion.div
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+      className="min-h-screen bg-gray-50"
+    >
+      {/* Header */}
+      <div className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-100">
+        <div className="flex items-center gap-3 px-4 py-3">
+          <button onClick={() => setView('driver-panel')} className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
+            <ArrowLeft className="w-4 h-4 text-gray-700" />
           </button>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={lightboxSrc}
-            alt="Foto ampliada"
-            className="max-w-[90vw] max-h-[85vh] object-contain rounded-lg"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </motion.div>
-      )}
-    </AnimatePresence>
-      {/* Floating Logo - siempre visible */}
-      <FloatingLogo />
+          <h1 className="text-lg font-bold text-gray-900">Editar Perfil</h1>
+        </div>
+      </div>
 
-      {/* Main Content */}
-      <main className="flex-1 max-w-4xl mx-auto w-full">
-        <AnimatePresence mode="wait">
-          {view === 'map' && <div key="map">{renderMap()}</div>}
-          {view === 'welcome' && <div key="welcome">{renderWelcome()}</div>}
-          {view === 'providers' && <div key="providers">{renderProviders()}</div>}
-          {view === 'profile' && <div key="profile">{renderProfile()}</div>}
-          {view === 'register' && <div key="register">{renderRegister()}</div>}
-          {view === 'login' && <div key="login">{renderLogin()}</div>}
-          {view === 'mypanel' && <div key="mypanel">{renderMyPanel()}</div>}
-          {view === 'editprofile' && <div key="editprofile">{renderEditProfile()}</div>}
-          {view === 'forums' && <div key="forums">{renderForums()}</div>}
-          {view === 'forumDetail' && <div key="forumDetail">{renderForumDetail()}</div>}
-          {view === 'clientLogin' && <div key="clientLogin">{renderClientLogin()}</div>}
-          {view === 'clientRegister' && <div key="clientRegister">{renderClientRegister()}</div>}
-          {view === 'clientPanel' && <div key="clientPanel">{renderClientPanel()}</div>}
-        </AnimatePresence>
-      </main>
-
-      {/* ===========================
-          BOTTOM NAVIGATION BAR
-          =========================== */}
-      {!['welcome', 'register', 'login', 'clientLogin', 'clientRegister', 'editprofile', 'forumDetail'].includes(view) && (
-        <nav
-          className="fixed bottom-0 left-0 right-0 z-[10000] bg-white border-t shadow-[0_-2px_10px_rgba(0,0,0,0.06)]"
-          style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
-        >
-          <div className="flex items-center justify-around h-16 max-w-lg mx-auto px-2">
-            {/* Mapa tab */}
-            <button
-              className={cn(
-                'flex flex-col items-center justify-center gap-0.5 px-3 py-1 rounded-xl transition-colors min-w-[64px]',
-                ['map', 'profile', 'providers'].includes(view) ? 'text-orange-600' : 'text-gray-400 hover:text-gray-600'
-              )}
-              onClick={() => setView('map')}
-            >
-              <MapPin size={22} strokeWidth={2} />
-              <span className="text-[10px] font-semibold">Mapa</span>
-            </button>
-
-            {/* Mensajes tab */}
-            <button
-              className="flex flex-col items-center justify-center gap-0.5 px-3 py-1 rounded-xl transition-colors text-gray-400 hover:text-gray-600 min-w-[64px]"
-              onClick={() => {
-                if (chatTarget) {
-                  setChatOpen(true)
-                } else {
-                  toast.info('Selecciona un proveedor para chatear')
-                }
-              }}
-            >
-              <MessageCircle size={22} strokeWidth={2} />
-              <span className="text-[10px] font-semibold">Mensajes</span>
-            </button>
-
-            {/* Inicio tab */}
-            <button
-              className={cn(
-                'flex flex-col items-center justify-center gap-0.5 px-3 py-1 rounded-xl transition-colors min-w-[64px]',
-                view === 'forums' ? 'text-orange-600' : 'text-gray-400 hover:text-gray-600'
-              )}
-              onClick={() => setView('welcome')}
-            >
-              <Zap size={22} strokeWidth={2} />
-              <span className="text-[10px] font-semibold">Inicio</span>
-            </button>
-
-            {/* Perfil tab */}
-            <button
-              className={cn(
-                'flex flex-col items-center justify-center gap-0.5 px-3 py-1 rounded-xl transition-colors min-w-[64px]',
-                ['mypanel', 'clientPanel'].includes(view) ? 'text-orange-600' : 'text-gray-400 hover:text-gray-600'
-              )}
-              onClick={() => {
-                if (currentProvider) setView('mypanel')
-                else if (currentClient) setView('clientPanel')
-                else setView('login')
-              }}
-            >
-              <User size={22} strokeWidth={2} />
-              <span className="text-[10px] font-semibold">Perfil</span>
-            </button>
+      <div className="p-4 space-y-5 max-w-md mx-auto">
+        {/* Profile Photo */}
+        <div className="flex flex-col items-center gap-2 pt-2">
+          <div className="relative">
+            <Avatar className="w-24 h-24 border-4 border-white shadow-lg">
+              <AvatarImage src={editPhotos.photo ?? currentProvider?.photo ?? undefined} />
+              <AvatarFallback className="text-2xl font-bold text-white" style={{ backgroundColor: BRAND_COLOR }}>
+                {editForm.name ? editForm.name.charAt(0).toUpperCase() : currentProvider?.name.charAt(0).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+            <label className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full flex items-center justify-center text-white shadow-md cursor-pointer" style={{ backgroundColor: BRAND_COLOR }}>
+              <Camera className="w-4 h-4" />
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0]
+                  if (file) setEditPhotos({ ...editPhotos, photo: await fileToBase64(file) })
+                }}
+              />
+            </label>
           </div>
-        </nav>
-      )}
+          <span className="text-xs text-gray-400">Toca para cambiar foto</span>
+        </div>
 
-      {/* ===========================
-          CHAT SHEET
-          =========================== */}
-      <Sheet open={chatOpen} onOpenChange={setChatOpen}>
-        <SheetContent side="right" className="flex flex-col p-0 w-full sm:max-w-md">
-          <SheetHeader className="px-4 pt-4 pb-0 border-b flex flex-row items-center gap-3">
-            <div className="flex-1 flex items-center gap-3">
-              {chatTarget && <ProviderAvatar provider={chatTarget} size={36} />}
-              <div className="flex-1 min-w-0">
-                <SheetTitle className="text-sm truncate">
-                  {chatTarget?.name}
-                </SheetTitle>
-                <SheetDescription className="text-xs truncate">
-                  {chatTarget?.businessName || CATEGORIES[chatTarget?.serviceCategory || 'pasaje']?.label}
-                </SheetDescription>
-              </div>
-              <Button size="sm" variant="outline" className="shrink-0 h-8 text-xs" asChild>
-                <a href={`tel:${chatTarget ? formatPhone(chatTarget.phone) : ''}`}>
-                  <Phone size={14} />
-                </a>
-              </Button>
-            </div>
-          </SheetHeader>
-
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-full text-center text-gray-400">
-                <MessageCircle size={32} className="mb-2" />
-                <p className="text-sm">Inicia una conversación</p>
-              </div>
-            )}
-            {messages.map((msg) => {
-              const isMine = msg.senderType === 'client'
-              return (
-                <div key={msg.id} className={cn('flex', isMine ? 'justify-end' : 'justify-start')}>
-                  <div className={cn(
-                    'max-w-[80%] px-3 py-2 rounded-2xl text-sm',
-                    isMine
-                      ? 'bg-orange-600 text-white rounded-br-md'
-                      : 'bg-gray-100 text-gray-800 rounded-bl-md'
-                  )}>
-                    <p className="whitespace-pre-wrap">{msg.content}</p>
-                    <p className={cn('text-[10px] mt-1', isMine ? 'text-orange-200' : 'text-gray-400')}>
-                      {timeAgo(msg.createdAt)}
-                    </p>
-                  </div>
-                </div>
-              )
-            })}
-            <div ref={chatEndRef} />
-          </div>
-
-          {/* Input */}
-          <div className="border-t p-3 flex gap-2">
+        {/* Form Fields */}
+        <div className="space-y-3">
+          <div>
+            <Label className="text-xs font-medium text-gray-500 mb-1 block">Nombre completo</Label>
             <Input
-              placeholder="Escribe un mensaje..."
-              value={chatMessage}
-              onChange={(e) => setChatMessage(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-              className="flex-1 h-10 rounded-lg"
+              value={editForm.name || ''}
+              onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+              className="h-11 rounded-xl"
             />
-            <Button
-              size="icon"
-              className="h-10 w-10 bg-orange-600 hover:bg-orange-700 text-white rounded-lg"
-              onClick={handleSendMessage}
-              disabled={!chatMessage.trim()}
-            >
-              <Send size={16} />
-            </Button>
           </div>
-        </SheetContent>
-      </Sheet>
 
-      {/* ===========================
-          REVIEW SHEET
-          =========================== */}
-      <Sheet open={reviewOpen} onOpenChange={setReviewOpen}>
-        <SheetContent side="bottom" className="rounded-t-2xl">
-          <SheetHeader className="px-4 pt-2">
-            <SheetTitle className="text-lg">Dejar Reseña</SheetTitle>
-            <SheetDescription>
-              {providerDetail?.name} — {providerDetail?.businessName}
-            </SheetDescription>
-          </SheetHeader>
-          <div className="px-4 py-4 space-y-4">
-            {/* Star rating */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-gray-700">Tu calificación</Label>
-              <StarRating rating={reviewRating} onRate={setReviewRating} size={32} />
-            </div>
-
-            {/* Comment */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-gray-700">Comentario (opcional)</Label>
-              <Textarea
-                placeholder="Cuéntanos tu experiencia..."
-                value={reviewComment}
-                onChange={(e) => setReviewComment(e.target.value)}
-                className="rounded-lg resize-none"
-                rows={3}
-              />
-            </div>
-
-            {/* Trust badges */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-gray-700">Sellos de confianza</Label>
-              <div className="grid grid-cols-2 gap-2">
-                {TRUST_BADGES.map((badge) => (
-                  <label
-                    key={badge.key}
-                    className={cn(
-                      'flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer transition-colors',
-                      reviewBadges[badge.key as keyof typeof reviewBadges]
-                        ? 'border-orange-300 bg-orange-50'
-                        : 'border-gray-200 hover:border-orange-200'
-                    )}
-                  >
-                    <Checkbox
-                      checked={reviewBadges[badge.key as keyof typeof reviewBadges]}
-                      onCheckedChange={(checked) =>
-                        setReviewBadges({ ...reviewBadges, [badge.key]: !!checked })
-                      }
-                    />
-                    <span className="text-sm">
-                      {badge.icon} {badge.label}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </div>
+          <div>
+            <Label className="text-xs font-medium text-gray-500 mb-1 block">Teléfono</Label>
+            <Input
+              value={editForm.phone || ''}
+              onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+              type="tel"
+              className="h-11 rounded-xl"
+            />
           </div>
-          <SheetFooter className="px-4 pb-4">
-            <Button
-              className="w-full h-11 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-lg"
-              onClick={handleSubmitReview}
-              disabled={reviewRating === 0}
-            >
-              <Star size={16} className="mr-2" />
-              Enviar Reseña
-            </Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
 
-      {/* ===========================
-          SHARE LOCATION SHEET
-          =========================== */}
-      <Sheet open={shareLocationOpen} onOpenChange={setShareLocationOpen}>
-        <SheetContent side="bottom" className="rounded-t-2xl">
-          <SheetHeader className="px-4 pt-2">
-            <SheetTitle className="text-lg flex items-center gap-2">
-              <MapPin size={20} className="text-blue-600" />
-              Compartir mi Ubicación
-            </SheetTitle>
-            <SheetDescription>
-              Tu ubicación se mostrará en el mapa para que el conductor te encuentre
-            </SheetDescription>
-          </SheetHeader>
-          <div className="px-4 py-4 space-y-4">
-            {/* Client name */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-gray-700">Tu nombre *</Label>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs font-medium text-gray-500 mb-1 block">Marca del auto</Label>
               <Input
-                placeholder="Ej: María"
-                value={shareClientName}
-                onChange={(e) => setShareClientName(e.target.value)}
-                className="rounded-lg"
+                value={editForm.carBrand || ''}
+                onChange={(e) => setEditForm({ ...editForm, carBrand: e.target.value })}
+                className="h-11 rounded-xl"
               />
             </div>
+            <div>
+              <Label className="text-xs font-medium text-gray-500 mb-1 block">Modelo del auto</Label>
+              <Input
+                value={editForm.carModel || ''}
+                onChange={(e) => setEditForm({ ...editForm, carModel: e.target.value })}
+                className="h-11 rounded-xl"
+              />
+            </div>
+          </div>
 
-            {/* Client photo (optional) */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-gray-700">Tu foto (opcional)</Label>
-              <div className="flex items-center gap-3">
-                <div className="w-16 h-16 rounded-full bg-gray-100 border-2 border-dashed border-gray-300 flex items-center justify-center overflow-hidden">
-                  {shareClientPhoto ? (
-                    <img src={shareClientPhoto} alt="Foto" className="w-full h-full object-cover" />
-                  ) : (
-                    <User size={24} className="text-gray-400" />
-                  )}
-                </div>
-                <label className="cursor-pointer">
+          <div>
+            <Label className="text-xs font-medium text-gray-500 mb-1 block">¿Qué servicio ofreces?</Label>
+            <Textarea
+              value={editForm.services || ''}
+              onChange={(e) => setEditForm({ ...editForm, services: e.target.value })}
+              rows={3}
+              className="rounded-xl resize-none"
+            />
+          </div>
+
+          <Separator />
+
+          {/* PIN Verification */}
+          <div>
+            <Label className="text-xs font-medium text-gray-500 mb-1 block">Confirma tu PIN para guardar *</Label>
+            <div className="relative">
+              <Input
+                placeholder="••••"
+                value={editPin}
+                onChange={(e) => setEditPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                type={editShowPin ? 'text' : 'password'}
+                className="h-11 rounded-xl pr-10"
+              />
+              <button
+                onClick={() => setEditShowPin(!editShowPin)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
+              >
+                {editShowPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Car Photos */}
+        <div>
+          <Label className="text-xs font-medium text-gray-500 mb-2 block">Fotos del auto</Label>
+          <div className="grid grid-cols-3 gap-2">
+            {(['carPhoto1', 'carPhoto2', 'carPhoto3'] as const).map((key, i) => {
+              const currentPhoto = currentProvider?.[key] || null
+              const editPhoto = editPhotos[key]
+              const displayPhoto = editPhoto !== undefined ? editPhoto : currentPhoto
+              const label = ['Auto 1', 'Auto 2', 'Auto 3'][i]
+
+              return (
+                <label key={key} className="cursor-pointer">
                   <input
                     type="file"
                     accept="image/*"
                     className="hidden"
                     onChange={async (e) => {
                       const file = e.target.files?.[0]
-                      if (file) {
-                        try {
-                          const b64 = await fileToBase64(file)
-                          setShareClientPhoto(b64)
-                        } catch { /* ignore */ }
-                      }
+                      if (file) setEditPhotos({ ...editPhotos, [key]: await fileToBase64(file) })
                     }}
                   />
-                  <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-50 text-orange-700 text-sm font-medium hover:bg-orange-100 transition-colors">
-                    <Camera size={16} />
-                    Subir foto
+                  <div className="aspect-[4/3] rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-1 bg-gray-50 hover:border-blue-300 hover:bg-blue-50 transition-colors overflow-hidden">
+                    {displayPhoto ? (
+                      <img src={displayPhoto} alt={label} className="w-full h-full object-cover" />
+                    ) : (
+                      <>
+                        <Camera className="w-5 h-5 text-gray-300" />
+                        <span className="text-[10px] text-gray-400">{label}</span>
+                      </>
+                    )}
                   </div>
                 </label>
-              </div>
-            </div>
-
-            {/* GPS Status */}
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-50 border border-blue-200">
-              {userLat != null && userLng != null ? (
-                <>
-                  <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse" />
-                  <span className="text-sm text-blue-800">
-                    GPS activo — ubicación detectada
-                  </span>
-                </>
-              ) : (
-                <>
-                  <div className="w-3 h-3 rounded-full bg-yellow-500" />
-                  <span className="text-sm text-yellow-800">
-                    Activa tu GPS para compartir ubicación
-                  </span>
-                </>
-              )}
-            </div>
+              )
+            })}
           </div>
-          <SheetFooter className="px-4 pb-4">
-            <Button
-              className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg"
-              onClick={() => {
-                // Use chatTarget provider id if available, else use first provider
-                const pid = chatTarget?.id || selectedProviderId || (providers[0]?.id)
-                if (pid) handleShareLocation(pid)
-                else toast.error('Selecciona un conductor primero')
-              }}
-              disabled={sharingLocation || !userLat || !userLng}
-            >
-              <MapPin size={16} className="mr-2" />
-              {sharingLocation ? 'Compartiendo...' : 'Compartir Ubicación'}
-            </Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
-    </div>
+        </div>
+
+        {/* Save Button */}
+        <Button
+          onClick={handleSaveProfile}
+          className="w-full h-12 rounded-2xl text-white font-semibold text-sm shadow-lg"
+          style={{ backgroundColor: BRAND_COLOR }}
+        >
+          <Check className="w-4 h-4 mr-2" />
+          Guardar Cambios
+        </Button>
+      </div>
+    </motion.div>
+  )
+
+  // ---- DOCTOR VIEW (Placeholder) ----
+  const renderDoctor = () => (
+    <motion.div
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+      className="min-h-screen bg-gray-50 flex flex-col"
+    >
+      <div className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-100">
+        <div className="flex items-center gap-3 px-4 py-3">
+          <button onClick={() => setView('home')} className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
+            <ArrowLeft className="w-4 h-4 text-gray-700" />
+          </button>
+          <h1 className="text-lg font-bold text-gray-900">Doctor</h1>
+        </div>
+      </div>
+
+      <div className="flex-1 flex flex-col items-center justify-center p-6">
+        <div className="text-center">
+          <div className="w-20 h-20 rounded-2xl mx-auto mb-4 bg-green-100 flex items-center justify-center">
+            <Stethoscope className="w-10 h-10 text-green-600" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Próximamente</h2>
+          <p className="text-sm text-gray-500 max-w-xs mx-auto">
+            El servicio de doctores estará disponible pronto. Podrás buscar médicos en la Florida y el Caribe directamente desde el mapa.
+          </p>
+          <Button
+            onClick={() => setView('home')}
+            className="mt-6 rounded-2xl text-white"
+            style={{ backgroundColor: BRAND_COLOR }}
+          >
+            Volver al Mapa
+          </Button>
+        </div>
+      </div>
+    </motion.div>
+  )
+
+  // ---- CLIENTE VIEW (Placeholder) ----
+  const renderCliente = () => (
+    <motion.div
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+      className="min-h-screen bg-gray-50 flex flex-col"
+    >
+      <div className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-100">
+        <div className="flex items-center gap-3 px-4 py-3">
+          <button onClick={() => setView('home')} className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
+            <ArrowLeft className="w-4 h-4 text-gray-700" />
+          </button>
+          <h1 className="text-lg font-bold text-gray-900">Cliente</h1>
+        </div>
+      </div>
+
+      <div className="flex-1 flex flex-col items-center justify-center p-6">
+        <div className="text-center">
+          <div className="w-20 h-20 rounded-2xl mx-auto mb-4 bg-amber-100 flex items-center justify-center">
+            <Users className="w-10 h-10 text-amber-600" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Próximamente</h2>
+          <p className="text-sm text-gray-500 max-w-xs mx-auto">
+            El servicio para clientes estará disponible pronto. Podrás solicitar servicios de transporte, carga y más desde tu ubicación.
+          </p>
+          <Button
+            onClick={() => setView('home')}
+            className="mt-6 rounded-2xl text-white"
+            style={{ backgroundColor: BRAND_COLOR }}
+          >
+            Volver al Mapa
+          </Button>
+        </div>
+      </div>
+    </motion.div>
+  )
+
+  // =============================================
+  // MAIN RENDER
+  // =============================================
+
+  return (
+    <AnimatePresence mode="wait">
+      {view === 'home' && <div key="home">{renderHome()}</div>}
+      {view === 'driver-register' && <div key="driver-register">{renderDriverRegister()}</div>}
+      {view === 'driver-login' && <div key="driver-login">{renderDriverLogin()}</div>}
+      {view === 'driver-panel' && <div key="driver-panel">{renderDriverPanel()}</div>}
+      {view === 'driver-edit' && <div key="driver-edit">{renderDriverEdit()}</div>}
+      {view === 'doctor' && <div key="doctor">{renderDoctor()}</div>}
+      {view === 'cliente' && <div key="cliente">{renderCliente()}</div>}
+    </AnimatePresence>
   )
 }

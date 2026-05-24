@@ -1,19 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
-// GET /api/providers - List all providers (with optional filters)
+// GET /api/providers - List all active providers
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
-    const category = searchParams.get('category')
     const available = searchParams.get('available')
     const search = searchParams.get('search')
 
     const where: Record<string, unknown> = { active: true, suspended: false }
 
-    if (category && category !== 'all') {
-      where.serviceCategory = category
-    }
     if (available === 'true') {
       where.available = true
     }
@@ -37,11 +33,11 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST /api/providers - Register a new provider (simplified)
+// POST /api/providers - Register a new provider
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { name, phone, pin, serviceCategory, vehicleType, businessName } = body
+    const { name, phone, pin, carBrand, carModel } = body
 
     if (!name || !phone || !pin) {
       return NextResponse.json({ error: 'Nombre, teléfono y PIN son obligatorios' }, { status: 400 })
@@ -66,9 +62,8 @@ export async function POST(req: NextRequest) {
         name: name.trim(),
         phone: phone.trim(),
         pin: pin.trim(),
-        serviceCategory: serviceCategory || 'pasaje',
-        vehicleType: vehicleType || 'carro_moderno',
-        businessName: businessName?.trim() || null,
+        carBrand: carBrand?.trim() || null,
+        carModel: carModel?.trim() || null,
         photo: body.photo || null,
         bio: body.bio?.trim() || null,
         schedule: body.schedule?.trim() || null,
