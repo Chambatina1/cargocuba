@@ -11,7 +11,7 @@ services:
     branch: main
     repo: https://github.com/Chambatina1/cargocuba.git
     buildCommand: npx prisma generate && npm install --ignore-scripts && npm run build
-    startCommand: npx prisma db push --skip-generate 2>/dev/null; node .next/standalone/server.js
+    startCommand: npx prisma db push --skip-generate --accept-data-loss 2>/dev/null; node .next/standalone/server.js
     envVars:
       - key: NODE_ENV
         value: production
