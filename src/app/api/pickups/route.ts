@@ -1,0 +1,137 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+const ADMIN_KEY = 'chambatina2024';
+
+function isAdmin(req: NextRequest): boolean {
+  return req.headers.get('x-admin-key') === ADMIN_KEY;
+}
+
+// Auto-create table if missing (for first deploy)
+let tableReady = false;
+async function ensureTable() {
+  if (tableReady) return;
+  try {
+    await prisma.pickupRequest.count();
+    tableReady = true;
+  } catch {
+    console.log('[Pickups] Creating PickupRequest table...');
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "PickupRequest" (
+        "id" SERIAL NOT NULL PRIMARY KEY,
+        "nombre" TEXT NOT NULL,
+        "telefono" TEXT,
+        "direccion" TEXT NOT NULL,
+        "lat" DOUBLE PRECISION NOT NULL,
+        "lng" DOUBLE PRECISION NOT NULL,
+        "notas" TEXT,
+        "estado" TEXT NOT NULL DEFAULT 'esperando',
+        "choferAsignado" TEXT,
+        "ordenRuta" INTEGER,
+        "fechaRecogida" TIMESTAMP(6),
+        "createdAt" TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS "PickupRequest_estado_idx" ON "PickupRequest"("estado");
+      CREATE INDEX IF NOT EXISTS "PickupRequest_choferAsignado_idx" ON "PickupRequest"("choferAsignado");
+      CREATE INDEX IF NOT EXISTS "PickupRequest_fechaRecogida_idx" ON "PickupRequest"("fechaRecogida");
+      CREATE INDEX IF NOT EXISTS "PickupRequest_createdAt_idx" ON "PickupRequest"("createdAt");
+    `);
+    tableReady = true;
+    console.log('[Pickups] Table created');
+  }
+}
+
+// GET — list pickups
+export async function GET(req: NextRequest) {
+  try {
+    await ensureTable();
+    const { searchParams } = new URL(req.url);
+    const estado = searchParams.get('estado') || undefined;
+    const chofer = searchParams.get('chofer') || undefined;
+    const hoy = searchParams.get('hoy') === 'true';
+
+    const where: any = {};
+    if (estado) where.estado = estado;
+    if (chofer) where.choferAsignado = chofer;
+    if (hoy) {
+      const start = new Date(); start.setHours(0, 0, 0, 0);
+      const end = new Date(); end.setHours(23, 59, 59, 999);
+      where.createdAt = { gte: start, lte: end };
+    }
+
+    const data = await prisma.pickupRequest.findMany({
+      where,
+      orderBy: [{ ordenRuta: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    return NextResponse.json({ ok: true, data });
+  } catch (err: any) {
+    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
+  }
+}
+
+// POST — create pickup (anyone)
+export async function POST(req: NextRequest) {
+  try {
+    await ensureTable();
+    const { nombre, telefono, direccion, lat, lng, notas } = await req.json();
+
+    if (!nombre || !direccion || lat == null || lng == null) {
+      return NextResponse.json({ ok: false, error: 'Nombre, direccion y ubicacion son requeridos' }, { status: 400 });
+    }
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      return NextResponse.json({ ok: false, error: 'Coordenadas invalidas' }, { status: 400 });
+    }
+
+    const pickup = await prisma.pickupRequest.create({
+      data: { nombre, telefono: telefono || null, direccion, lat, lng, notas: notas || null },
+    });
+
+    return NextResponse.json({ ok: true, data: pickup });
+  } catch (err: any) {
+    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
+  }
+}
+
+// PUT — update pickup (admin)
+export async function PUT(req: NextRequest) {
+  if (!isAdmin(req)) return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 });
+
+  try {
+    await ensureTable();
+    const { id, estado, choferAsignado, ordenRuta, notas, fechaRecogida } = await req.json();
+    if (!id) return NextResponse.json({ ok: false, error: 'ID requerido' }, { status: 400 });
+
+    const updateData: any = {};
+    if (estado !== undefined) updateData.estado = estado;
+    if (choferAsignado !== undefined) updateData.choferAsignado = choferAsignado;
+    if (ordenRuta !== undefined) updateData.ordenRuta = ordenRuta;
+    if (notas !== undefined) updateData.notas = notas;
+    if (fechaRecogida !== undefined) updateData.fechaRecogida = fechaRecogida ? new Date(fechaRecogida) : null;
+
+    const pickup = await prisma.pickupRequest.update({ where: { id }, data: updateData });
+    return NextResponse.json({ ok: true, data: pickup });
+  } catch (err: any) {
+    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
+  }
+}
+
+// DELETE — delete pickup (admin)
+export async function DELETE(req: NextRequest) {
+  if (!isAdmin(req)) return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 });
+
+  try {
+    await ensureTable();
+    const { searchParams } = new URL(req.url);
+    const id = parseInt(searchParams.get('id') || '0');
+    if (!id) return NextResponse.json({ ok: false, error: 'ID requerido' }, { status: 400 });
+
+    await prisma.pickupRequest.delete({ where: { id } });
+    return NextResponse.json({ ok: true });
+  } catch (err: any) {
+    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
+  }
+}

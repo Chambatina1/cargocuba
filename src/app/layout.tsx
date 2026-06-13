@@ -14,29 +14,21 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Flota de Autos — Flota de autos en tiempo real",
+  title: "CargoCuba — Recogidas con Ruta Optimizada",
   description:
-    "Encuentra conductores en Florida y el Caribe. Flota de autos con geolocalización en tiempo real. Transporte, carga, servicios móviles.",
+    "Solicita tu recogida con un toque. Tu punto se enciende VERDE en el mapa. El chofer recoge y cambia a MORADO. Rutas optimizadas automaticamente.",
   keywords: [
-    "flota de autos",
-    "conductores",
+    "recogida",
+    "carga",
+    "Cuba",
     "Florida",
-    "Caribe",
-    "transporte",
-    "geolocalización",
-    "tiempo real",
-    "mapa",
+    "ruta optimizada",
+    "logistica",
+    "paquetes",
   ],
-  authors: [{ name: "Flota de Autos" }],
   icons: {
     icon: "/logo.svg",
     apple: "/logo.svg",
-  },
-  openGraph: {
-    title: "Flota de Autos — Conductores en tiempo real",
-    description:
-      "Tu plataforma de flota de autos con geolocalización en tiempo real en Florida y el Caribe",
-    type: "website",
   },
 };
 

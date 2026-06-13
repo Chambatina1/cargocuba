@@ -1,5 +1,6 @@
 // =============================================
-// Flota de Autos - Simplified Schema
+// CargoCuba - Recogidas con Ruta Optimizada
+// VERDE = esperando | MORADO = recogido
 // =============================================
 
 generator client {
@@ -12,66 +13,26 @@ datasource db {
 }
 
 // =============================================
-// PROVIDER (Conductor)
+// PICKUP REQUEST (Recogida)
 // =============================================
 
-model Provider {
-  id            String   @id @default(cuid())
-  name          String
-  phone         String   @unique
-  pin           String
-
-  // Car info
-  carBrand      String?
-  carModel      String?
-
-  // Ubicación GPS
-  lat           Float    @default(23.1136)
-  lng           Float    @default(-82.3666)
-
-  // Estado
-  active        Boolean  @default(true)
-  available     Boolean  @default(false)  // "Live" - debe activarse manualmente
-  rating        Float    @default(5.0)
-  totalJobs     Int      @default(0)
-
-  // Perfil / Ficha de presentación
-  photo         String?  // Foto de perfil (URL o base64)
-  bio           String?  // Descripción del servicio que ofrece
-  businessName  String?  // Nombre del negocio
-  services      String?  // Lista de servicios ofrecidos (JSON string)
-  priceRange    String?  // Rango de precios
-  schedule      String?  // Horario de trabajo
-  socialMedia   String?  // Redes sociales (JSON string)
-
-  // Fotos del vehículo (base64 comprimido)
-  carPhoto1     String?
-  carPhoto2     String?
-  carPhoto3     String?
-
-  // Notas adicionales
-  notes         String?
-
-  // Identificación (opcional para registro rápido)
-  idNumber      String?
-
-  // Suspensión por administrador
-  suspended       Boolean   @default(false)
-  suspendedReason String?
-  suspendedAt     DateTime?
-
-  // Referido por alguien
-  referredByName    String?
-  referredByPhone   String?
-
-  // Sesión
-  sessionToken  String?
-  sessionExpiry DateTime?
-
+model PickupRequest {
+  id            Int      @id @default(autoincrement())
+  nombre        String
+  telefono      String?
+  direccion     String
+  lat           Float
+  lng           Float
+  notas         String?
+  estado        String   @default("esperando")  // esperando, recogido, cancelado
+  choferAsignado String?
+  ordenRuta     Int?
+  fechaRecogida DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  @@index([phone])
-  @@index([active])
-  @@index([available])
+  @@index([estado])
+  @@index([choferAsignado])
+  @@index([fechaRecogida])
+  @@index([createdAt])
 }
