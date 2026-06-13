@@ -1,6 +1,7 @@
 // =============================================
 // CargoCuba - Recogidas con Ruta Optimizada
 // VERDE = esperando | MORADO = recogido
+// Chofer se ve moviendo en tiempo real en el mapa
 // =============================================
 
 generator client {
@@ -35,4 +36,21 @@ model PickupRequest {
   @@index([choferAsignado])
   @@index([fechaRecogida])
   @@index([createdAt])
+}
+
+// =============================================
+// DRIVER LOCATION (GPS en tiempo real del chofer)
+// =============================================
+
+model DriverLocation {
+  id        Int      @id @default(autoincrement())
+  phone     String   @unique
+  nombre    String
+  lat       Float
+  lng       Float
+  activo    Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+
+  @@index([phone])
+  @@index([activo])
 }
