@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import {
   ShoppingCart, MapPin, Route, Trash2, Check, X, Phone,
   Truck, Loader2, ChevronRight, Zap, RotateCcw, Users, Shield,
-  Navigation, Eye, EyeOff, Crosshair, ArrowLeft
+  Navigation, Crosshair, ArrowLeft, Radar, Map
 } from 'lucide-react';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -59,12 +59,16 @@ function fmtDist(m: number) {
 }
 function fmtTime(s: number) { if (s < 60) return `${Math.round(s)}s`; const m = Math.floor(s / 60); return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${m % 60}m`; }
 
-// ─── Nearest-Neighbor ───────────────────────────────────────────────────────
+// ─── Haversine (returns km) ────────────────────────────────────────────────
 function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180, dLon = (lon2 - lon1) * Math.PI / 180;
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function distMilesFromBase(lat: number, lng: number): number {
+  return haversine(BASE_LAT, BASE_LNG, lat, lng) * 0.621371;
 }
 
 function optimizeOrder(pickups: Pickup[], startLat = BASE_LAT, startLng = BASE_LNG): Pickup[] {
@@ -100,11 +104,6 @@ function pinSVG(color: string, num?: number, pulse?: boolean) {
   return `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="36" height="46" viewBox="0 0 36 46"><path d="M18 0C8.06 0 0 8.06 0 18c0 13.5 18 28 18 28s18-14.5 18-28C36 8.06 27.94 0 18 0z" fill="${color}" stroke="#fff" stroke-width="2"/>${pulseHtml}${numHtml}</svg>`)}`;
 }
 
-// Truck icon SVG for driver marker
-function truckSVG() {
-  return `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="40" height="48" viewBox="0 0 40 48"><circle cx="20" cy="20" r="18" fill="${CHOFER_COLOR}" stroke="#fff" stroke-width="3"/><text x="20" y="26" text-anchor="middle" fill="#fff" font-size="18" font-family="system-ui">🚛</text></svg>`)}`;
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 // MAIN PAGE
 // ═══════════════════════════════════════════════════════════════════════════
@@ -124,7 +123,7 @@ export default function CargoCubaPage() {
   const mapInstRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
   const routeLineRef = useRef<any>(null);
-  const driverMarkerRef = useRef<any>(null);
+  const driverAccuracyRef = useRef<any>(null);
   const LRef = useRef<any>(null);
 
   // ─── Route ───
@@ -143,6 +142,10 @@ export default function CargoCubaPage() {
   const [driverActive, setDriverActive] = useState(false);
   const [driverMyLocation, setDriverMyLocation] = useState<{ lat: number; lng: number } | null>(null);
   const watchIdRef = useRef<number | null>(null);
+
+  // ─── Follow Driver Mode ───
+  const [followingDriver, setFollowingDriver] = useState(false);
+  const [followDriverPhone, setFollowDriverPhone] = useState<string | null>(null);
 
   // ─── Admin ───
   const [adminPassword, setAdminPassword] = useState('');
@@ -167,7 +170,7 @@ export default function CargoCubaPage() {
   }, []);
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // LOAD DATA
+  // LOAD DATA (faster refresh for driver tracking)
   // ═══════════════════════════════════════════════════════════════════════════
   const load = useCallback(async () => {
     try {
@@ -184,7 +187,19 @@ export default function CargoCubaPage() {
   }, []);
 
   useEffect(() => { setLoading(true); load(); }, [load]);
-  useEffect(() => { const iv = setInterval(load, 8000); return () => clearInterval(iv); }, [load]);
+  // Refresh every 4 seconds for real-time driver movement
+  useEffect(() => { const iv = setInterval(load, 4000); return () => clearInterval(iv); }, [load]);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // AUTO-FOLLOW DRIVER: keep map centered on followed driver
+  // ═══════════════════════════════════════════════════════════════════════════
+  useEffect(() => {
+    if (!followingDriver || !followDriverPhone || !mapInstRef.current) return;
+    const target = drivers.find(d => d.phone === followDriverPhone && d.activo);
+    if (target) {
+      mapInstRef.current.setView([target.lat, target.lng], 16, { animate: true, duration: 1.5 });
+    }
+  }, [drivers, followingDriver, followDriverPhone]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // MAP
@@ -194,7 +209,7 @@ export default function CargoCubaPage() {
     const L = LRef.current;
     if (!mapInstRef.current) {
       mapInstRef.current = L.map(mapRef.current, { center: [BASE_LAT, BASE_LNG], zoom: 11, zoomControl: true });
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '', maxZoom: 18 }).addTo(mapInstRef.current);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '', maxZoom: 19 }).addTo(mapInstRef.current);
     }
   }, [mapReady]);
 
@@ -202,13 +217,19 @@ export default function CargoCubaPage() {
     if (!mapInstRef.current || !LRef.current) return;
     const L = LRef.current;
 
-    // Clear all
+    // Clear all markers
     markersRef.current.forEach(m => m.remove()); markersRef.current = [];
     if (routeLineRef.current) { routeLineRef.current.remove(); routeLineRef.current = null; }
-    if (driverMarkerRef.current) { driverMarkerRef.current.remove(); driverMarkerRef.current = null; }
+    if (driverAccuracyRef.current) { driverAccuracyRef.current.remove(); driverAccuracyRef.current = null; }
 
     const active = pickups.filter(p => p.estado !== 'cancelado');
     const displayList = optimizedRoute.length > 0 && panel === 'admin' ? optimizedRoute : active;
+
+    // If following a driver, don't auto-fit bounds
+    if (followingDriver) {
+      // Only render markers, don't change view
+    }
+
     const bounds: any[] = [];
 
     // ─── BASE marker (red) ───
@@ -231,31 +252,89 @@ export default function CargoCubaPage() {
       const marker = L.marker([p.lat, p.lng], { icon }).addTo(mapInstRef.current);
       const estadoLabel = isVerde ? 'En Espera' : 'Recogido';
       const estadoColor = isVerde ? VERDE : MORADO;
-      marker.bindPopup(`<div style="font-family:system-ui;min-width:180px;"><strong style="font-size:13px;">${p.nombre}</strong><div style="font-size:11px;color:#666;margin-top:2px;">${p.direccion}</div><div style="margin-top:6px;display:flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:${estadoColor};display:inline-block;"></span><span style="font-size:11px;font-weight:600;color:${estadoColor};">${estadoLabel}</span></div>${p.choferAsignado ? `<div style="font-size:11px;margin-top:4px;color:#555;">Chofer: ${p.choferAsignado}</div>` : ''}${p.telefono ? `<a href="tel:${p.telefono}" style="display:inline-block;margin-top:6px;font-size:12px;color:#2563eb;font-weight:600;">${p.telefono}</a>` : ''}</div>`);
+      const distFromBase = distMilesFromBase(p.lat, p.lng).toFixed(1);
+      marker.bindPopup(`<div style="font-family:system-ui;min-width:180px;"><strong style="font-size:13px;">${p.nombre}</strong><div style="font-size:11px;color:#666;margin-top:2px;">${p.direccion}</div><div style="margin-top:4px;font-size:11px;color:#dc2626;font-weight:600;">${distFromBase} mi de la Base</div><div style="margin-top:6px;display:flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:${estadoColor};display:inline-block;"></span><span style="font-size:11px;font-weight:600;color:${estadoColor};">${estadoLabel}</span></div>${p.choferAsignado ? `<div style="font-size:11px;margin-top:4px;color:#555;">Chofer: ${p.choferAsignado}</div>` : ''}${p.telefono ? `<a href="tel:${p.telefono}" style="display:inline-block;margin-top:6px;font-size:12px;color:#2563eb;font-weight:600;">${p.telefono}</a>` : ''}</div>`);
       bounds.push([p.lat, p.lng]); markersRef.current.push(marker);
     });
 
-    // ─── DRIVER markers (blue truck, moving) ───
+    // ─── DRIVER markers (blue truck with pulse + accuracy circle) ───
     drivers.filter(d => d.activo).forEach(d => {
-      const truckIcon = L.divIcon({
-        html: `<div style="position:relative;"><div style="width:40px;height:40px;background:${CHOFER_COLOR};border:3px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(37,99,235,0.5);"><span style="font-size:18px;">🚛</span></div><div style="position:absolute;top:-2px;right:-2px;width:12px;height:12px;background:#22c55e;border:2px solid #fff;border-radius:50%;"></div></div>`,
-        className: '', iconSize: [40, 40], iconAnchor: [20, 20],
+      // Accuracy circle around driver
+      const accuracyCircle = L.circle([d.lat, d.lng], {
+        radius: 30,
+        color: CHOFER_COLOR,
+        fillColor: CHOFER_COLOR,
+        fillOpacity: 0.08,
+        weight: 2,
+        opacity: 0.3,
+      }).addTo(mapInstRef.current);
+      markersRef.current.push(accuracyCircle);
+
+      // Pulsing outer ring
+      const pulseIcon = L.divIcon({
+        html: `<div style="position:relative;width:60px;height:60px;display:flex;align-items:center;justify-content:center;">
+          <div style="position:absolute;width:60px;height:60px;border-radius:50%;background:rgba(37,99,235,0.15);animation:driverPulse 2s ease-out infinite;"></div>
+          <div style="position:absolute;width:44px;height:44px;border-radius:50%;background:rgba(37,99,235,0.25);animation:driverPulse 2s ease-out infinite 0.5s;"></div>
+          <div style="width:36px;height:36px;background:${CHOFER_COLOR};border:3px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 12px rgba(37,99,235,0.6);z-index:2;position:relative;">
+            <span style="font-size:16px;">🚛</span>
+          </div>
+          <div style="position:absolute;top:0;right:2px;width:12px;height:12px;background:#22c55e;border:2px solid #fff;border-radius:50%;z-index:3;animation:liveDot 1.5s ease-in-out infinite;"></div>
+        </div>
+        <style>@keyframes driverPulse{0%{transform:scale(0.5);opacity:1}100%{transform:scale(1.3);opacity:0}}@keyframes liveDot{0%,100%{opacity:1}50%{opacity:0.3}}</style>`,
+        className: '', iconSize: [60, 60], iconAnchor: [30, 30],
       });
-      const dM = L.marker([d.lat, d.lng], { icon: truckIcon, zIndexOffset: 3000 }).addTo(mapInstRef.current);
-      dM.bindPopup(`<div style="font-family:system-ui;min-width:160px;"><strong style="font-size:13px;">${d.nombre}</strong><div style="font-size:11px;color:${CHOFER_COLOR};font-weight:600;margin-top:2px;">Chofer en camino</div><div style="font-size:11px;color:#666;margin-top:2px;">${d.phone}</div></div>`);
+      const dM = L.marker([d.lat, d.lng], { icon: pulseIcon, zIndexOffset: 3000 }).addTo(mapInstRef.current);
+      const distFromBase = distMilesFromBase(d.lat, d.lng).toFixed(1);
+      dM.bindPopup(`<div style="font-family:system-ui;min-width:180px;"><strong style="font-size:13px;">${d.nombre}</strong><div style="font-size:11px;color:${CHOFER_COLOR};font-weight:600;margin-top:2px;">Chofer EN VIVO</div><div style="font-size:11px;color:#666;margin-top:2px;">${d.phone}</div><div style="margin-top:4px;font-size:11px;color:#dc2626;font-weight:600;">${distFromBase} mi de la Base</div></div>`);
       bounds.push([d.lat, d.lng]); markersRef.current.push(dM);
     });
 
-    if (bounds.length > 1) {
-      mapInstRef.current.fitBounds(bounds, { padding: [60, 60], maxZoom: 13 });
-    } else {
-      mapInstRef.current.setView([BASE_LAT, BASE_LNG], 12);
+    // Only auto-fit if NOT following a driver
+    if (!followingDriver) {
+      if (bounds.length > 1) {
+        mapInstRef.current.fitBounds(bounds, { padding: [60, 60], maxZoom: 13 });
+      } else {
+        mapInstRef.current.setView([BASE_LAT, BASE_LNG], 12);
+      }
     }
     setTimeout(() => mapInstRef.current?.invalidateSize(), 150);
-  }, [pickups, drivers, optimizedRoute, routeData, panel, mapReady]);
+  }, [pickups, drivers, optimizedRoute, routeData, panel, mapReady, followingDriver]);
 
   useEffect(() => { setTimeout(() => { initMap(); renderMarkers(); }, 200); }, [initMap, renderMarkers]);
   useEffect(() => { if (mapInstRef.current) renderMarkers(); }, [renderMarkers]);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FOLLOW DRIVER BUTTON HANDLER
+  // ═══════════════════════════════════════════════════════════════════════════
+  const handleFollowDriver = useCallback((phone?: string) => {
+    if (!mapInstRef.current || !LRef.current) return;
+
+    const activeDrivers = drivers.filter(d => d.activo);
+    if (activeDrivers.length === 0) {
+      toast.error('No hay choferes activos en el mapa');
+      return;
+    }
+
+    // Close any open panel to show the map
+    setPanel('none');
+
+    if (followingDriver && followDriverPhone === phone) {
+      // Unfollow
+      setFollowingDriver(false);
+      setFollowDriverPhone(null);
+      toast.success('Dejaste de seguir al chofer');
+      renderMarkers();
+      return;
+    }
+
+    const target = phone ? activeDrivers.find(d => d.phone === phone) : activeDrivers[0];
+    if (!target) return;
+
+    setFollowingDriver(true);
+    setFollowDriverPhone(target.phone);
+    mapInstRef.current.setView([target.lat, target.lng], 16, { animate: true });
+    toast.success(`Siguiendo a ${target.nombre} en tiempo real`);
+  }, [drivers, followingDriver, followDriverPhone, renderMarkers]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // CLIENT: GPS + SUBMIT
@@ -301,7 +380,6 @@ export default function CargoCubaPage() {
     if (!driverPhone.trim() || !driverName.trim()) { toast.error('Pon tu telefono y nombre'); return; }
     if (!navigator.geolocation) { toast.error('GPS no disponible'); return; }
 
-    // Initial position
     navigator.geolocation.getCurrentPosition(async (pos) => {
       const { latitude: lat, longitude: lng } = pos.coords;
       setDriverMyLocation({ lat, lng });
@@ -316,7 +394,6 @@ export default function CargoCubaPage() {
       } catch { toast.error('Error al activar GPS'); }
     }, () => toast.error('No se pudo obtener ubicacion'), { enableHighAccuracy: true, timeout: 10000 });
 
-    // Watch position
     if (watchIdRef.current) navigator.geolocation.clearWatch(watchIdRef.current);
     watchIdRef.current = navigator.geolocation.watchPosition(async (pos) => {
       const { latitude: lat, longitude: lng } = pos.coords;
@@ -327,9 +404,7 @@ export default function CargoCubaPage() {
           body: JSON.stringify({ phone: driverPhone.trim(), nombre: driverName.trim(), lat, lng, activo: true }),
         });
       } catch {}
-    }, () => {}, { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 });
-
-    return () => { if (watchIdRef.current) navigator.geolocation.clearWatch(watchIdRef.current); };
+    }, () => {}, { enableHighAccuracy: true, timeout: 15000, maximumAge: 2000 });
   }, [driverPhone, driverName, load]);
 
   const stopDriverTracking = async () => {
@@ -393,11 +468,11 @@ export default function CargoCubaPage() {
   return (
     <div className="relative w-screen h-screen overflow-hidden">
 
-      {/* ═══════════ FULLSCREEN MAP ═══════════ */}
+      {/* ═══════════ FULLSCREEN MAP (ALWAYS VISIBLE) ═══════════ */}
       <div ref={mapRef} className="absolute inset-0 z-0" />
       {!mapReady && <div className="absolute inset-0 z-[1] bg-zinc-100 flex items-center justify-center"><Loader2 className="h-8 w-8 text-emerald-500 animate-spin" /></div>}
 
-      {/* ═══════════ TOP BAR (over map) ═══════════ */}
+      {/* ═══════════ TOP BAR (over map, always visible) ═══════════ */}
       <div className="absolute top-0 left-0 right-0 z-[1000] pointer-events-none">
         <div className="pointer-events-auto bg-white/95 backdrop-blur-md px-4 py-2.5 flex items-center justify-between shadow-lg border-b border-zinc-100">
           <div className="flex items-center gap-2.5">
@@ -407,12 +482,11 @@ export default function CargoCubaPage() {
               <p className="text-[10px] text-zinc-500 flex items-center gap-2">
                 <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />{esperandoCount} verde</span>
                 <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-purple-500" />{recogidosCount} morado</span>
-                {activeDriversCount > 0 && <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />{activeDriversCount} chofer</span>}
+                {activeDriversCount > 0 && <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />{activeDriversCount} en vivo</span>}
               </p>
             </div>
           </div>
 
-          {/* Distance from base to each pickup */}
           <div className="flex items-center gap-1.5">
             <MapPin className="h-3.5 w-3.5 text-red-500" />
             <span className="text-[10px] text-zinc-500 hidden sm:inline">Base: {BASE_NAME}</span>
@@ -420,7 +494,95 @@ export default function CargoCubaPage() {
         </div>
       </div>
 
-      {/* ═══════════ BOTTOM BUTTONS (over map) ═══════════ */}
+      {/* ═══════════ FOLLOW DRIVER BUTTON (ALWAYS visible, top-right) ═══════════ */}
+      <div className="absolute top-14 right-3 z-[1002]">
+        {activeDriversCount > 0 ? (
+          <motion.button
+            whileTap={{ scale: 0.92 }}
+            onClick={() => handleFollowDriver()}
+            className={`flex items-center gap-2 px-3.5 py-2.5 rounded-2xl shadow-2xl border font-bold text-[11px] transition-all ${
+              followingDriver
+                ? 'bg-blue-600 text-white border-blue-700 shadow-blue-200'
+                : 'bg-white text-zinc-800 border-zinc-200 hover:bg-blue-50 hover:border-blue-300'
+            }`}
+            style={{ touchAction: 'manipulation' }}>
+            {followingDriver ? (
+              <>
+                <Radar className="h-4 w-4 animate-spin" style={{ animationDuration: '3s' }} />
+                <span>Siguiendo{followDriverPhone ? `: ${drivers.find(d => d.phone === followDriverPhone)?.nombre || ''}` : ''}</span>
+              </>
+            ) : (
+              <>
+                <Navigation className="h-4 w-4 text-blue-600" />
+                <span>Seguir Chofer</span>
+                <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-[9px] font-bold flex items-center justify-center">{activeDriversCount}</span>
+              </>
+            )}
+          </motion.button>
+        ) : (
+          <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/80 backdrop-blur-sm border border-zinc-200 text-[10px] text-zinc-400">
+            <Truck className="h-3.5 w-3.5" />
+            Sin choferes activos
+          </div>
+        )}
+      </div>
+
+      {/* ═══════════ FOLLOWING DRIVER INFO BAR ═══════════ */}
+      <AnimatePresence>
+        {followingDriver && followDriverPhone && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="absolute top-[104px] right-3 z-[1002] bg-white/95 backdrop-blur-md rounded-xl shadow-xl border border-blue-200 p-3 min-w-[200px]"
+          >
+            {(() => {
+              const d = drivers.find(dr => dr.phone === followDriverPhone);
+              if (!d) return null;
+              const dist = distMilesFromBase(d.lat, d.lng).toFixed(1);
+              return (
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                      <span className="text-sm">🚛</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-zinc-900 truncate">{d.nombre}</p>
+                      <p className="text-[9px] text-blue-600 font-semibold flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                        EN VIVO
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="text-zinc-500">{dist} mi de la Base</span>
+                    <span className="text-zinc-400">{d.lat.toFixed(4)}, {d.lng.toFixed(4)}</span>
+                  </div>
+                  {d.phone && <p className="text-[10px] text-zinc-400">{d.phone}</p>}
+                </div>
+              );
+            })()}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ═══════════ BACK TO MAP BUTTON (visible when any panel is open) ═══════════ */}
+      <AnimatePresence>
+        {panel !== 'none' && (
+          <motion.button
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            onClick={() => { setPanel('none'); setOptimizedRoute([]); setRouteData(null); setFollowingDriver(false); setFollowDriverPhone(null); }}
+            className="absolute bottom-4 left-4 z-[1003] flex items-center gap-2 bg-blue-600 text-white px-4 py-3 rounded-2xl shadow-2xl font-bold text-xs"
+            style={{ touchAction: 'manipulation' }}>
+            <Map className="h-4 w-4" />
+            Ver Mapa
+          </motion.button>
+        )}
+      </AnimatePresence>
+
+      {/* ═══════════ BOTTOM BUTTONS (over map, only when no panel) ═══════════ */}
       {panel === 'none' && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] flex gap-3">
           <motion.button whileTap={{ scale: 0.95 }} onClick={() => { setPanel('clientForm'); getLocation(); }}
@@ -465,7 +627,7 @@ export default function CargoCubaPage() {
 
             <div className="p-5 space-y-3">
               <div className={`flex items-center gap-2.5 px-4 py-3 rounded-xl text-xs font-semibold ${form.lat !== 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
-                {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : form.lat !== 0 ? <Check className="h-5 w-5" /> : <MapPin className="h-4 w-4" />}
+                {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : form.lat !== 0 ? <Check className="h-5 h-5" /> : <MapPin className="h-4 w-4" />}
                 {locating ? 'Obteniendo GPS...' : form.lat !== 0 ? 'Ubicacion detectada' : 'Detectando ubicacion...'}
               </div>
 
@@ -491,10 +653,10 @@ export default function CargoCubaPage() {
       <AnimatePresence>
         {panel === 'driver' && (
           <motion.div initial={{ opacity: 0, x: 300 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 300 }}
-            className="absolute top-0 right-0 bottom-0 z-[1001] w-full max-w-sm bg-white shadow-2xl border-l border-zinc-200 flex flex-col">
+            className="absolute top-0 right-0 bottom-0 z-[1001] w-full max-w-sm bg-white/95 backdrop-blur-sm shadow-2xl border-l border-zinc-200 flex flex-col">
 
-            <div className="px-4 py-3 border-b border-zinc-100 flex items-center gap-3 bg-zinc-50">
-              <button onClick={() => { if (driverActive) stopDriverTracking(); setPanel('none'); }} className="w-8 h-8 rounded-full bg-white border border-zinc-200 flex items-center justify-center"><ArrowLeft className="h-4 w-4 text-zinc-600" /></button>
+            <div className="px-4 py-3 border-b border-zinc-100 flex items-center gap-3 bg-white">
+              <button onClick={() => { if (driverActive) stopDriverTracking(); setPanel('none'); }} className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center"><ArrowLeft className="h-4 w-4 text-zinc-600" /></button>
               <h3 className="font-bold text-sm text-zinc-900 flex-1">Panel del Chofer</h3>
               {driverActive && <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-green-100 text-green-700 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />EN VIVO</span>}
             </div>
@@ -502,8 +664,8 @@ export default function CargoCubaPage() {
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {/* Driver info form */}
               <div className="space-y-2.5">
-                <input value={driverPhone} onChange={e => setDriverPhone(e.target.value)} placeholder="Tu telefono *" className="w-full h-10 px-3 rounded-lg border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 bg-zinc-50" />
-                <input value={driverName} onChange={e => setDriverName(e.target.value)} placeholder="Tu nombre *" className="w-full h-10 px-3 rounded-lg border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 bg-zinc-50" />
+                <input value={driverPhone} onChange={e => setDriverPhone(e.target.value)} placeholder="Tu telefono *" className="w-full h-10 px-3 rounded-lg border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white" />
+                <input value={driverName} onChange={e => setDriverName(e.target.value)} placeholder="Tu nombre *" className="w-full h-10 px-3 rounded-lg border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white" />
 
                 {!driverActive ? (
                   <button onClick={startDriverTracking} disabled={!driverPhone.trim() || !driverName.trim()}
@@ -522,7 +684,9 @@ export default function CargoCubaPage() {
 
               {driverMyLocation && (
                 <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-700">
-                  GPS activo: {driverMyLocation.lat.toFixed(4)}, {driverMyLocation.lng.toFixed(4)}
+                  <div className="flex items-center gap-1.5 mb-1"><span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" /> GPS Activo</div>
+                  <div className="font-mono">{driverMyLocation.lat.toFixed(6)}, {driverMyLocation.lng.toFixed(6)}</div>
+                  <div className="mt-1 font-semibold">{distMilesFromBase(driverMyLocation.lat, driverMyLocation.lng).toFixed(1)} mi de la Base</div>
                 </div>
               )}
 
@@ -536,11 +700,13 @@ export default function CargoCubaPage() {
                     <div className="space-y-2">
                       {pickups.filter(p => p.choferAsignado === driverPhone.trim() && p.estado !== 'cancelado').map(p => {
                         const isEsp = p.estado === 'esperando';
+                        const distMi = distMilesFromBase(p.lat, p.lng).toFixed(1);
                         return (
-                          <div key={p.id} className="rounded-xl border border-zinc-200 p-3 flex items-center gap-3" style={{ borderLeftWidth: 3, borderLeftColor: isEsp ? VERDE : MORADO }}>
+                          <div key={p.id} className="rounded-xl border border-zinc-200 p-3 flex items-center gap-3 bg-white/80" style={{ borderLeftWidth: 3, borderLeftColor: isEsp ? VERDE : MORADO }}>
                             <div className="flex-1 min-w-0">
                               <p className="text-xs font-bold text-zinc-800">{p.nombre}</p>
                               <p className="text-[10px] text-zinc-400 truncate">{p.direccion}</p>
+                              <p className="text-[9px] text-red-500 font-semibold mt-0.5">{distMi} mi de la Base</p>
                               {p.telefono && <a href={`tel:${p.telefono}`} className="text-[10px] text-blue-600 font-semibold">{p.telefono}</a>}
                             </div>
                             {isEsp && (
@@ -598,19 +764,31 @@ export default function CargoCubaPage() {
       <AnimatePresence>
         {panel === 'admin' && adminLoggedIn && (
           <motion.div initial={{ x: 300 }} animate={{ x: 0 }} exit={{ x: 300 }}
-            className="absolute top-0 right-0 bottom-0 z-[1001] w-full max-w-md bg-white shadow-2xl border-l border-zinc-200 flex flex-col">
+            className="absolute top-0 right-0 bottom-0 z-[1001] w-full max-w-md bg-white/95 backdrop-blur-sm shadow-2xl border-l border-zinc-200 flex flex-col">
 
             {/* Admin header */}
-            <div className="px-4 py-3 border-b border-zinc-100 flex items-center gap-3 bg-zinc-50 flex-shrink-0">
-              <button onClick={() => { setOptimizedRoute([]); setRouteData(null); setAdminLoggedIn(false); setPanel('none'); }} className="w-8 h-8 rounded-full bg-white border border-zinc-200 flex items-center justify-center"><ArrowLeft className="h-4 w-4 text-zinc-600" /></button>
+            <div className="px-4 py-3 border-b border-zinc-100 flex items-center gap-3 bg-white flex-shrink-0">
+              <button onClick={() => { setOptimizedRoute([]); setRouteData(null); setAdminLoggedIn(false); setPanel('none'); }} className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center"><ArrowLeft className="h-4 w-4 text-zinc-600" /></button>
               <h3 className="font-bold text-sm text-zinc-900 flex-1">Administracion</h3>
               <select value={adminChofer} onChange={e => setAdminChofer(e.target.value)} className="h-7 px-2 rounded-lg border border-zinc-200 text-[10px] bg-white">
                 <option value="">Todos</option>{CHOFERES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
 
+            {/* Active drivers bar */}
+            {activeDriversCount > 0 && (
+              <div className="px-4 py-2 border-b border-zinc-100 flex items-center gap-2 bg-blue-50/80 flex-shrink-0">
+                <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                <span className="text-[10px] font-bold text-blue-700">{activeDriversCount} chofer{activeDriversCount > 1 ? 'es' : ''} en vivo</span>
+                <div className="flex-1" />
+                <button onClick={() => handleFollowDriver()} className="text-[9px] font-bold px-2.5 py-1 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 flex items-center gap-1">
+                  <Navigation className="h-3 w-3" /> Seguir en mapa
+                </button>
+              </div>
+            )}
+
             {/* Route optimize bar */}
-            <div className="px-4 py-2 border-b border-zinc-100 flex items-center gap-2 bg-white flex-shrink-0">
+            <div className="px-4 py-2 border-b border-zinc-100 flex items-center gap-2 bg-white/80 flex-shrink-0">
               <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-700"><span className="w-2 h-2 rounded-full bg-emerald-500" />{esperandoCount}</span>
               <span className="flex items-center gap-1 text-[10px] font-bold text-purple-700"><span className="w-2 h-2 rounded-full bg-purple-500" />{recogidosCount}</span>
               <div className="flex-1" />
@@ -644,23 +822,27 @@ export default function CargoCubaPage() {
         )}
       </AnimatePresence>
 
-      {/* Route order overlay on map */}
+      {/* ═══════════ ROUTE ORDER OVERLAY ON MAP ═══════════ */}
       {optimizedRoute.length > 0 && routeData && (panel === 'admin') && (
-        <div className="absolute top-14 right-2 z-[999] bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-zinc-200 p-2.5 max-w-[200px] max-h-[45vh] overflow-y-auto">
+        <div className="absolute top-14 left-3 z-[999] bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-zinc-200 p-2.5 max-w-[200px] max-h-[45vh] overflow-y-auto">
           <p className="text-[10px] font-bold text-zinc-600 mb-1.5">ORDEN DE RECOGIDA</p>
           <div className="flex items-center gap-1.5 py-0.5 mb-1">
             <div className="w-4 h-4 rounded-full bg-red-500 text-white text-[7px] font-bold flex items-center justify-center">B</div>
             <p className="text-[9px] text-red-600 font-semibold truncate">{BASE_NAME}</p>
           </div>
-          {optimizedRoute.map((p, i) => (
-            <div key={p.id} className="flex items-start gap-1.5 py-0.5">
-              <div className="w-4 h-4 rounded-full bg-blue-600 text-white text-[8px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</div>
-              <div className="min-w-0">
-                <p className="text-[10px] font-semibold text-zinc-800 truncate leading-tight">{p.nombre}</p>
-                {routeData.legs[i + 1] && <p className="text-[8px] text-blue-500">{fmtDist(routeData.legs[i + 1].distance)} · {fmtTime(routeData.legs[i + 1].duration)}</p>}
+          {optimizedRoute.map((p, i) => {
+            const distMi = distMilesFromBase(p.lat, p.lng).toFixed(1);
+            return (
+              <div key={p.id} className="flex items-start gap-1.5 py-0.5">
+                <div className="w-4 h-4 rounded-full bg-blue-600 text-white text-[8px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</div>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold text-zinc-800 truncate leading-tight">{p.nombre}</p>
+                  <p className="text-[8px] text-red-500">{distMi} mi de la Base</p>
+                  {routeData.legs[i + 1] && <p className="text-[8px] text-blue-500">{fmtDist(routeData.legs[i + 1].distance)} · {fmtTime(routeData.legs[i + 1].duration)}</p>}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -677,6 +859,7 @@ function AdminCard({ pickup, onUpdate, onDelete, routeIdx, showRouteNum, leg }: 
 }) {
   const isEsp = pickup.estado === 'esperando';
   const [expanded, setExpanded] = useState(false);
+  const distMi = distMilesFromBase(pickup.lat, pickup.lng).toFixed(1);
   return (
     <div style={isEsp ? { borderLeft: `3px solid ${VERDE}` } : pickup.estado === 'recogido' ? { borderLeft: `3px solid ${MORADO}` } : {}}>
       <button onClick={() => setExpanded(!expanded)} className="w-full text-left px-3 py-2.5 flex items-center gap-2.5 hover:bg-zinc-50" style={{ touchAction: 'manipulation' }}>
@@ -687,9 +870,12 @@ function AdminCard({ pickup, onUpdate, onDelete, routeIdx, showRouteNum, leg }: 
             <span className="text-[12px] font-semibold text-zinc-800 truncate">{pickup.nombre}</span>
             <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isEsp ? 'bg-emerald-100 text-emerald-700' : 'bg-purple-100 text-purple-700'}`}>{isEsp ? 'ESPERA' : 'RECOGIDO'}</span>
           </div>
-          <p className="text-[10px] text-zinc-400 truncate">{pickup.direccion}</p>
+          <div className="flex items-center gap-2">
+            <p className="text-[10px] text-zinc-400 truncate">{pickup.direccion}</p>
+          </div>
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
+          <span className="text-[9px] text-red-500 font-semibold">{distMi} mi</span>
           {leg && leg.distance > 0 && <span className="text-[9px] text-blue-500 font-medium">{fmtDist(leg.distance)}</span>}
           {pickup.telefono && <a href={`tel:${pickup.telefono}`} onClick={e => e.stopPropagation()} className="w-6 h-6 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center"><Phone className="h-3 w-3" /></a>}
           <ChevronRight className={`w-3.5 h-3.5 text-zinc-400 transition-transform ${expanded ? 'rotate-90' : ''}`} />
@@ -700,6 +886,7 @@ function AdminCard({ pickup, onUpdate, onDelete, routeIdx, showRouteNum, leg }: 
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px]">
             {pickup.telefono && <div><span className="text-zinc-400">Telefono:</span> <a href={`tel:${pickup.telefono}`} className="text-blue-600 font-medium">{pickup.telefono}</a></div>}
             {pickup.choferAsignado && <div><span className="text-zinc-400">Chofer:</span> <span className="text-zinc-700 font-medium">{pickup.choferAsignado}</span></div>}
+            <div><span className="text-zinc-400">Distancia:</span> <span className="text-red-500 font-semibold">{distMi} mi de la Base</span></div>
             <div><span className="text-zinc-400">Creada:</span> <span className="text-zinc-600">{new Date(pickup.createdAt).toLocaleString('es', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span></div>
             {pickup.notas && <div className="col-span-2"><span className="text-zinc-400">Notas:</span> <span className="text-zinc-600">{pickup.notas}</span></div>}
           </div>
