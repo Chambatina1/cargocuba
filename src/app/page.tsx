@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import {
   ShoppingCart, MapPin, Route, Trash2, Check, X, Phone,
   Truck, Loader2, ChevronRight, Zap, RotateCcw, Users, Shield,
-  Navigation, Crosshair, ArrowLeft, Radar, Map
+  Navigation, Crosshair, ArrowLeft, Radar, Map, Clock, Search
 } from 'lucide-react';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -14,7 +14,12 @@ interface Pickup {
   id: number; nombre: string; telefono: string | null; direccion: string;
   lat: number; lng: number; notas: string | null; estado: string;
   choferAsignado: string | null; ordenRuta: number | null;
-  fechaRecogida: string | null; createdAt: string; updatedAt: string;
+  fechaRecogida: string | null; horarioReady: string | null;
+  createdAt: string; updatedAt: string;
+}
+
+interface GeoSuggestion {
+  display_name: string; lat: string; lon: string;
 }
 
 interface Driver {
@@ -73,18 +78,45 @@ function distMilesFromBase(lat: number, lng: number): number {
 
 function optimizeOrder(pickups: Pickup[], startLat = BASE_LAT, startLng = BASE_LNG): Pickup[] {
   if (pickups.length <= 1) return [...pickups];
-  const remaining = [...pickups], ordered: Pickup[] = [];
+  // Sort by horarioReady first (nulls last = treat as '99:99'), then nearest-neighbor within time groups
+  const sorted = [...pickups].sort((a, b) => {
+    const tA = a.horarioReady || '99:99';
+    const tB = b.horarioReady || '99:99';
+    return tA.localeCompare(tB);
+  });
+  // Group by horarioReady
+  const groups: Map<string, Pickup[]> = new Map();
+  for (const p of sorted) {
+    const key = p.horarioReady || '__sin_horario__';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(p);
+  }
+  // Nearest-neighbor within each group, chaining groups in time order
+  const ordered: Pickup[] = [];
   let cLat = startLat, cLng = startLng;
-  while (remaining.length > 0) {
-    let bestI = 0, bestD = Infinity;
-    for (let i = 0; i < remaining.length; i++) {
-      const d = haversine(cLat, cLng, remaining[i].lat, remaining[i].lng);
-      if (d < bestD) { bestD = d; bestI = i; }
+  for (const [, group] of groups) {
+    const remaining = [...group];
+    while (remaining.length > 0) {
+      let bestI = 0, bestD = Infinity;
+      for (let i = 0; i < remaining.length; i++) {
+        const d = haversine(cLat, cLng, remaining[i].lat, remaining[i].lng);
+        if (d < bestD) { bestD = d; bestI = i; }
+      }
+      const next = remaining.splice(bestI, 1)[0];
+      ordered.push(next); cLat = next.lat; cLng = next.lng;
     }
-    const next = remaining.splice(bestI, 1)[0];
-    ordered.push(next); cLat = next.lat; cLng = next.lng;
   }
   return ordered;
+}
+
+// ─── Forward Geocode (Nominatim) ────────────────────────────────────────
+async function forwardGeocode(query: string): Promise<GeoSuggestion[]> {
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=5&countrycodes=us&accept-language=es`, {
+      headers: { 'User-Agent': 'CargoCuba-App/1.0' }
+    });
+    const j = await r.json(); return (j || []).slice(0, 5);
+  } catch { return []; }
 }
 
 // ─── Reverse Geocode ───────────────────────────────────────────────────────
@@ -132,9 +164,17 @@ export default function CargoCubaPage() {
   const [optimizing, setOptimizing] = useState(false);
 
   // ─── Client form ───
-  const [form, setForm] = useState({ nombre: '', telefono: '', direccion: '', lat: 0, lng: 0, notas: '' });
+  const [form, setForm] = useState({ nombre: '', telefono: '', direccion: '', lat: 0, lng: 0, notas: '', horarioReady: '' });
   const [locating, setLocating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // ─── Address search ───
+  const [searchQuery, setSearchQuery] = useState('');
+  const [suggestions, setSuggestions] = useState<GeoSuggestion[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previewMarkerRef = useRef<any>(null);
 
   // ─── Driver mode ───
   const [driverPhone, setDriverPhone] = useState('');
@@ -222,6 +262,9 @@ export default function CargoCubaPage() {
     if (routeLineRef.current) { routeLineRef.current.remove(); routeLineRef.current = null; }
     if (driverAccuracyRef.current) { driverAccuracyRef.current.remove(); driverAccuracyRef.current = null; }
 
+    // Clear preview marker if exists
+    if (previewMarkerRef.current) { previewMarkerRef.current.remove(); previewMarkerRef.current = null; }
+
     const active = pickups.filter(p => p.estado !== 'cancelado');
     const displayList = optimizedRoute.length > 0 && panel === 'admin' ? optimizedRoute : active;
 
@@ -253,7 +296,7 @@ export default function CargoCubaPage() {
       const estadoLabel = isVerde ? 'En Espera' : 'Recogido';
       const estadoColor = isVerde ? VERDE : MORADO;
       const distFromBase = distMilesFromBase(p.lat, p.lng).toFixed(1);
-      marker.bindPopup(`<div style="font-family:system-ui;min-width:180px;"><strong style="font-size:13px;">${p.nombre}</strong><div style="font-size:11px;color:#666;margin-top:2px;">${p.direccion}</div><div style="margin-top:4px;font-size:11px;color:#dc2626;font-weight:600;">${distFromBase} mi de la Base</div><div style="margin-top:6px;display:flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:${estadoColor};display:inline-block;"></span><span style="font-size:11px;font-weight:600;color:${estadoColor};">${estadoLabel}</span></div>${p.choferAsignado ? `<div style="font-size:11px;margin-top:4px;color:#555;">Chofer: ${p.choferAsignado}</div>` : ''}${p.telefono ? `<a href="tel:${p.telefono}" style="display:inline-block;margin-top:6px;font-size:12px;color:#2563eb;font-weight:600;">${p.telefono}</a>` : ''}</div>`);
+      marker.bindPopup(`<div style="font-family:system-ui;min-width:180px;"><strong style="font-size:13px;">${p.nombre}</strong><div style="font-size:11px;color:#666;margin-top:2px;">${p.direccion}</div><div style="margin-top:4px;font-size:11px;color:#dc2626;font-weight:600;">${distFromBase} mi de la Base</div>${p.horarioReady ? `<div style="margin-top:4px;font-size:11px;color:#2563eb;font-weight:600;">Ready: ${p.horarioReady}</div>` : ''}<div style="margin-top:6px;display:flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:${estadoColor};display:inline-block;"></span><span style="font-size:11px;font-weight:600;color:${estadoColor};">${estadoLabel}</span></div>${p.choferAsignado ? `<div style="font-size:11px;margin-top:4px;color:#555;">Chofer: ${p.choferAsignado}</div>` : ''}${p.telefono ? `<a href="tel:${p.telefono}" style="display:inline-block;margin-top:6px;font-size:12px;color:#2563eb;font-weight:600;">${p.telefono}</a>` : ''}</div>`);
       bounds.push([p.lat, p.lng]); markersRef.current.push(marker);
     });
 
@@ -337,8 +380,35 @@ export default function CargoCubaPage() {
   }, [drivers, followingDriver, followDriverPhone, renderMarkers]);
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // CLIENT: GPS + SUBMIT
+  // CLIENT: ADDRESS SEARCH + GPS + SUBMIT
   // ═══════════════════════════════════════════════════════════════════════════
+  const handleSearchAddress = useCallback((q: string) => {
+    setSearchQuery(q);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    if (q.length < 3) { setSuggestions([]); setShowSuggestions(false); return; }
+    setSearching(true); setShowSuggestions(true);
+    searchTimerRef.current = setTimeout(async () => {
+      const results = await forwardGeocode(q);
+      setSuggestions(results); setSearching(false);
+    }, 400);
+  }, []);
+
+  const selectSuggestion = useCallback((s: GeoSuggestion) => {
+    const lat = parseFloat(s.lat), lng = parseFloat(s.lon);
+    const shortAddr = s.display_name.split(',').slice(0, 3).join(',');
+    setForm(f => ({ ...f, lat, lng, direccion: shortAddr }));
+    setSearchQuery(shortAddr); setShowSuggestions(false); setSuggestions([]);
+    // Place RED preview pin on map
+    if (previewMarkerRef.current) { previewMarkerRef.current.remove(); previewMarkerRef.current = null; }
+    if (mapInstRef.current && LRef.current) {
+      const L = LRef.current;
+      const icon = L.icon({ iconUrl: pinSVG('#dc2626'), iconSize: [36, 46], iconAnchor: [18, 46], popupAnchor: [0, -46] });
+      previewMarkerRef.current = L.marker([lat, lng], { icon, zIndexOffset: 5000 }).addTo(mapInstRef.current);
+      previewMarkerRef.current.bindPopup(`<div style="font-family:system-ui;"><strong style="font-size:12px;">Vista Previa</strong><div style="font-size:10px;color:#dc2626;font-weight:600;">Punto rojo = se hara VERDE al enviar</div></div>`);
+      mapInstRef.current.setView([lat, lng], 16, { animate: true });
+    }
+  }, []);
+
   const getLocation = useCallback(() => {
     setLocating(true);
     if (!navigator.geolocation) { toast.error('GPS no disponible'); setLocating(false); return; }
@@ -347,7 +417,19 @@ export default function CargoCubaPage() {
         const { latitude: lat, longitude: lng } = pos.coords;
         setForm(f => ({ ...f, lat, lng })); setLocating(false);
         const dir = await reverseGeocode(lat, lng);
-        if (dir) setForm(f => ({ ...f, direccion: dir.split(',').slice(0, 3).join(',') }));
+        if (dir) {
+          const short = dir.split(',').slice(0, 3).join(',');
+          setForm(f => ({ ...f, direccion: short }));
+          setSearchQuery(short);
+        }
+        // Place RED preview pin
+        if (previewMarkerRef.current) { previewMarkerRef.current.remove(); previewMarkerRef.current = null; }
+        if (mapInstRef.current && LRef.current) {
+          const L = LRef.current;
+          const icon = L.icon({ iconUrl: pinSVG('#dc2626'), iconSize: [36, 46], iconAnchor: [18, 46], popupAnchor: [0, -46] });
+          previewMarkerRef.current = L.marker([lat, lng], { icon, zIndexOffset: 5000 }).addTo(mapInstRef.current);
+          mapInstRef.current.setView([lat, lng], 16, { animate: true });
+        }
       },
       () => { toast.error('Activa tu ubicacion'); setLocating(false); },
       { enableHighAccuracy: true, timeout: 15000 }
@@ -356,17 +438,18 @@ export default function CargoCubaPage() {
 
   const handleSubmit = async () => {
     if (!form.nombre.trim()) { toast.error('Pon tu nombre'); return; }
-    if (form.lat === 0) { toast.error('Espera GPS'); return; }
+    if (form.lat === 0) { toast.error('Selecciona una direccion en el mapa'); return; }
     setSubmitting(true);
     try {
       const r = await fetch('/api/pickups', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, direccion: form.direccion || `${form.lat.toFixed(4)}, ${form.lng.toFixed(4)}` }),
+        body: JSON.stringify({ ...form, direccion: form.direccion || `${form.lat.toFixed(4)}, ${form.lng.toFixed(4)}`, horarioReady: form.horarioReady || null }),
       });
       const j = await r.json();
       if (j.ok) {
-        toast.success('Tu punto esta VERDE en el mapa');
-        setForm({ nombre: '', telefono: '', direccion: '', lat: 0, lng: 0, notas: '' });
+        toast.success('Tu punto esta VERDE en el mapa' + (form.horarioReady ? ` (Ready: ${form.horarioReady})` : ''));
+        setForm({ nombre: '', telefono: '', direccion: '', lat: 0, lng: 0, notas: '', horarioReady: '' });
+        setSearchQuery(''); setSuggestions([]); setShowSuggestions(false);
         setPanel('none'); load();
       } else toast.error(j.error || 'Error');
     } catch { toast.error('Error de conexion'); }
@@ -452,7 +535,8 @@ export default function CargoCubaPage() {
       setRouteData(result);
       for (let i = 0; i < ordered.length; i++) await updatePickup(ordered[i].id, { ordenRuta: i + 1 });
       const firstMi = result.legs[0] ? (result.legs[0].distance * 0.000621371).toFixed(1) : '0';
-      toast.success(`Ruta: Base -> ${ordered.length} paradas, ${fmtDist(result.totalDistance)}, ${fmtTime(result.totalDuration)} (Salida: ${firstMi} mi)`);
+      const timeGroups = [...new Set(ordered.map(p => p.horarioReady || 'Sin horario'))].sort();
+      toast.success(`Ruta optimizada por horario: ${ordered.length} paradas, ${fmtDist(result.totalDistance)}, ${fmtTime(result.totalDuration)}`);
     } catch (err: any) { toast.error('Error ruta: ' + (err.message || '')); }
     setOptimizing(false);
   };
@@ -585,7 +669,7 @@ export default function CargoCubaPage() {
       {/* ═══════════ BOTTOM BUTTONS (over map, only when no panel) ═══════════ */}
       {panel === 'none' && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] flex gap-3">
-          <motion.button whileTap={{ scale: 0.95 }} onClick={() => { setPanel('clientForm'); getLocation(); }}
+          <motion.button whileTap={{ scale: 0.95 }} onClick={() => { setSearchQuery(''); setSuggestions([]); setPanel('clientForm'); }}
             className="flex flex-col items-center gap-1.5 bg-white rounded-2xl px-5 py-3.5 shadow-2xl border border-zinc-100 hover:shadow-3xl transition-shadow"
             style={{ touchAction: 'manipulation' }}>
             <div className="w-11 h-11 rounded-full bg-emerald-500 flex items-center justify-center"><ShoppingCart className="h-5 w-5 text-white" /></div>
@@ -617,30 +701,82 @@ export default function CargoCubaPage() {
           <motion.div initial={{ opacity: 0, y: 300 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 300 }}
             className="absolute bottom-0 left-0 right-0 z-[1001] bg-white rounded-t-3xl shadow-2xl border-t border-zinc-200 max-h-[85vh] overflow-y-auto">
 
-            <div className="sticky top-0 bg-white/95 backdrop-blur-sm px-5 pt-4 pb-2 border-b border-zinc-100 flex items-center justify-between rounded-t-3xl">
+            <div className="sticky top-0 bg-white/95 backdrop-blur-sm px-5 pt-4 pb-2 border-b border-zinc-100 flex items-center justify-between rounded-t-3xl z-10">
               <div>
                 <h3 className="font-bold text-base text-zinc-900">Nueva Recogida</h3>
                 <p className="text-[11px] text-zinc-500">Tu punto se encendera VERDE en el mapa</p>
               </div>
-              <button onClick={() => setPanel('none')} className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center"><X className="h-4 w-4 text-zinc-500" /></button>
+              <button onClick={() => { setPanel('none'); if (previewMarkerRef.current) { previewMarkerRef.current.remove(); previewMarkerRef.current = null; } setSearchQuery(''); setSuggestions([]); }} className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center"><X className="h-4 w-4 text-zinc-500" /></button>
             </div>
 
             <div className="p-5 space-y-3">
+              {/* Location status bar */}
               <div className={`flex items-center gap-2.5 px-4 py-3 rounded-xl text-xs font-semibold ${form.lat !== 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
                 {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : form.lat !== 0 ? <Check className="h-5 h-5" /> : <MapPin className="h-4 w-4" />}
-                {locating ? 'Obteniendo GPS...' : form.lat !== 0 ? 'Ubicacion detectada' : 'Detectando ubicacion...'}
+                {locating ? 'Obteniendo GPS...' : form.lat !== 0 ? `Ubicacion lista (${distMilesFromBase(form.lat, form.lng).toFixed(1)} mi de la Base)` : 'Busca tu direccion o usa GPS'}
               </div>
+
+              {/* Address search input with autocomplete */}
+              <div className="relative">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+                  <input
+                    value={searchQuery}
+                    onChange={e => handleSearchAddress(e.target.value)}
+                    onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
+                    placeholder="Escribe tu direccion (ej: 123 Main St, Orlando)"
+                    className="w-full h-11 pl-10 pr-10 rounded-xl border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 bg-zinc-50"
+                  />
+                  {searching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 animate-spin" />}
+                  {!searching && searchQuery && (
+                    <button onClick={() => { setSearchQuery(''); setSuggestions([]); setShowSuggestions(false); }} className="absolute right-3 top-1/2 -translate-y-1/2"><X className="h-4 w-4 text-zinc-400 hover:text-zinc-600" /></button>
+                  )}
+                </div>
+                {/* Suggestions dropdown */}
+                {showSuggestions && suggestions.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-zinc-200 rounded-xl shadow-xl z-20 max-h-48 overflow-y-auto">
+                    {suggestions.map((s, i) => (
+                      <button key={i} onClick={() => selectSuggestion(s)}
+                        className="w-full text-left px-4 py-2.5 hover:bg-emerald-50 border-b border-zinc-50 last:border-0 flex items-start gap-2" style={{ touchAction: 'manipulation' }}>
+                        <MapPin className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
+                        <span className="text-xs text-zinc-700 leading-relaxed">{s.display_name.split(',').slice(0, 3).join(',')}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* GPS fallback button */}
+              <button onClick={getLocation} disabled={locating}
+                className="w-full h-10 rounded-xl border border-dashed border-zinc-300 text-xs font-semibold text-zinc-500 hover:bg-zinc-50 hover:border-zinc-400 flex items-center justify-center gap-2 disabled:opacity-50 transition-all"
+                style={{ touchAction: 'manipulation' }}>
+                <Crosshair className="h-3.5 w-3.5" />
+                {locating ? 'Obteniendo GPS...' : 'O usar mi ubicacion GPS'}
+              </button>
+
+              {/* Hidden direccion (auto-filled from search) */}
+              <input value={form.direccion} onChange={e => setForm(f => ({ ...f, direccion: e.target.value }))} placeholder="Direccion (auto o edita manualmente)" className="w-full h-11 px-4 rounded-xl border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 bg-zinc-50" />
 
               <input value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} placeholder="Tu nombre *" className="w-full h-11 px-4 rounded-xl border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 bg-zinc-50" />
               <input value={form.telefono} onChange={e => setForm(f => ({ ...f, telefono: e.target.value }))} placeholder="Telefono" className="w-full h-11 px-4 rounded-xl border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 bg-zinc-50" />
-              <input value={form.direccion} onChange={e => setForm(f => ({ ...f, direccion: e.target.value }))} placeholder="Direccion (se autocompleta con GPS)" className="w-full h-11 px-4 rounded-xl border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 bg-zinc-50" />
-              <textarea value={form.notas} onChange={e => setForm(f => ({ ...f, notas: e.target.value }))} placeholder="Notas (tamano, horario...)" rows={2} className="w-full px-4 py-3 rounded-xl border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 bg-zinc-50 resize-none" />
+
+              {/* Horario Ready - time picker */}
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-blue-500" />
+                  <input type="time" value={form.horarioReady} onChange={e => setForm(f => ({ ...f, horarioReady: e.target.value }))}
+                    className="w-full h-11 pl-10 pr-4 rounded-xl border border-blue-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 bg-blue-50/50" />
+                </div>
+                <div className="text-[10px] text-zinc-500 leading-tight px-1">Hora<br/>Ready</div>
+              </div>
+
+              <textarea value={form.notas} onChange={e => setForm(f => ({ ...f, notas: e.target.value }))} placeholder="Notas (tamano, instrucciones...)" rows={2} className="w-full px-4 py-3 rounded-xl border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 bg-zinc-50 resize-none" />
 
               <button onClick={handleSubmit} disabled={submitting || form.lat === 0 || !form.nombre.trim()}
                 className="w-full bg-emerald-600 text-white py-3.5 rounded-xl font-bold text-sm hover:bg-emerald-700 disabled:opacity-40 transition-all flex items-center justify-center gap-2 shadow-lg"
                 style={{ touchAction: 'manipulation' }}>
                 {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                {submitting ? 'Enviando...' : 'Encender mi punto en VERDE'}
+                {submitting ? 'Enviando...' : `Encender mi punto en VERDE${form.horarioReady ? ` (Ready ${form.horarioReady})` : ''}`}
               </button>
             </div>
           </motion.div>
@@ -719,6 +855,7 @@ export default function CargoCubaPage() {
                             <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${isEsp ? 'bg-emerald-100 text-emerald-700' : 'bg-purple-100 text-purple-700'}`}>
                               {p.ordenRuta ? `#${p.ordenRuta}` : isEsp ? 'ESPERA' : 'LISTO'}
                             </span>
+                            {p.horarioReady && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">{p.horarioReady}</span>}
                           </div>
                         );
                       })}
@@ -824,25 +961,45 @@ export default function CargoCubaPage() {
 
       {/* ═══════════ ROUTE ORDER OVERLAY ON MAP ═══════════ */}
       {optimizedRoute.length > 0 && routeData && (panel === 'admin') && (
-        <div className="absolute top-14 left-3 z-[999] bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-zinc-200 p-2.5 max-w-[200px] max-h-[45vh] overflow-y-auto">
-          <p className="text-[10px] font-bold text-zinc-600 mb-1.5">ORDEN DE RECOGIDA</p>
+        <div className="absolute top-14 left-3 z-[999] bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-zinc-200 p-2.5 max-w-[220px] max-h-[50vh] overflow-y-auto">
+          <p className="text-[10px] font-bold text-zinc-600 mb-1.5 flex items-center gap-1"><Clock className="h-3 w-3 text-blue-500" /> RUTA POR HORARIO READY</p>
           <div className="flex items-center gap-1.5 py-0.5 mb-1">
             <div className="w-4 h-4 rounded-full bg-red-500 text-white text-[7px] font-bold flex items-center justify-center">B</div>
             <p className="text-[9px] text-red-600 font-semibold truncate">{BASE_NAME}</p>
           </div>
-          {optimizedRoute.map((p, i) => {
-            const distMi = distMilesFromBase(p.lat, p.lng).toFixed(1);
-            return (
-              <div key={p.id} className="flex items-start gap-1.5 py-0.5">
-                <div className="w-4 h-4 rounded-full bg-blue-600 text-white text-[8px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</div>
-                <div className="min-w-0">
-                  <p className="text-[10px] font-semibold text-zinc-800 truncate leading-tight">{p.nombre}</p>
-                  <p className="text-[8px] text-red-500">{distMi} mi de la Base</p>
-                  {routeData.legs[i + 1] && <p className="text-[8px] text-blue-500">{fmtDist(routeData.legs[i + 1].distance)} · {fmtTime(routeData.legs[i + 1].duration)}</p>}
+          {(() => {
+            // Group by horarioReady for display
+            const groups: { time: string; items: { p: Pickup; idx: number }[] }[] = [];
+            let currentGroup: string | null = null;
+            optimizedRoute.forEach((p, i) => {
+              const t = p.horarioReady || 'Sin horario';
+              if (t !== currentGroup) {
+                currentGroup = t;
+                groups.push({ time: t, items: [] });
+              }
+              groups[groups.length - 1].items.push({ p, idx: i });
+            });
+            return groups.map(g => (
+              <div key={g.time}>
+                <div className="text-[9px] font-bold text-blue-600 bg-blue-50 rounded px-1.5 py-0.5 mt-1 mb-0.5 flex items-center gap-1">
+                  <Clock className="h-2.5 w-2.5" />{g.time}
                 </div>
+                {g.items.map(({ p, idx }) => {
+                  const distMi = distMilesFromBase(p.lat, p.lng).toFixed(1);
+                  return (
+                    <div key={p.id} className="flex items-start gap-1.5 py-0.5">
+                      <div className="w-4 h-4 rounded-full bg-blue-600 text-white text-[8px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{idx + 1}</div>
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-semibold text-zinc-800 truncate leading-tight">{p.nombre}</p>
+                        <p className="text-[8px] text-red-500">{distMi} mi de la Base</p>
+                        {routeData.legs[idx + 1] && <p className="text-[8px] text-blue-500">{fmtDist(routeData.legs[idx + 1].distance)} · {fmtTime(routeData.legs[idx + 1].duration)}</p>}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
+            ));
+          })()}
         </div>
       )}
     </div>
@@ -869,6 +1026,7 @@ function AdminCard({ pickup, onUpdate, onDelete, routeIdx, showRouteNum, leg }: 
           <div className="flex items-center gap-1.5">
             <span className="text-[12px] font-semibold text-zinc-800 truncate">{pickup.nombre}</span>
             <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isEsp ? 'bg-emerald-100 text-emerald-700' : 'bg-purple-100 text-purple-700'}`}>{isEsp ? 'ESPERA' : 'RECOGIDO'}</span>
+            {pickup.horarioReady && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" />{pickup.horarioReady}</span>}
           </div>
           <div className="flex items-center gap-2">
             <p className="text-[10px] text-zinc-400 truncate">{pickup.direccion}</p>
@@ -888,6 +1046,7 @@ function AdminCard({ pickup, onUpdate, onDelete, routeIdx, showRouteNum, leg }: 
             {pickup.choferAsignado && <div><span className="text-zinc-400">Chofer:</span> <span className="text-zinc-700 font-medium">{pickup.choferAsignado}</span></div>}
             <div><span className="text-zinc-400">Distancia:</span> <span className="text-red-500 font-semibold">{distMi} mi de la Base</span></div>
             <div><span className="text-zinc-400">Creada:</span> <span className="text-zinc-600">{new Date(pickup.createdAt).toLocaleString('es', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span></div>
+            {pickup.horarioReady && <div><span className="text-zinc-400">Horario Ready:</span> <span className="text-blue-600 font-bold">{pickup.horarioReady}</span></div>}
             {pickup.notas && <div className="col-span-2"><span className="text-zinc-400">Notas:</span> <span className="text-zinc-600">{pickup.notas}</span></div>}
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
@@ -897,6 +1056,8 @@ function AdminCard({ pickup, onUpdate, onDelete, routeIdx, showRouteNum, leg }: 
               <button onClick={() => onUpdate(pickup.id, { estado: 'esperando', fechaRecogida: null })} className="flex items-center gap-1 text-[10px] font-bold px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200"><RotateCcw className="h-3 w-3" /> Espera</button>
             )}
             <button onClick={() => { if (confirm('Eliminar?')) onDelete(pickup.id); }} className="flex items-center gap-1 text-[10px] font-bold px-3 py-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100"><Trash2 className="h-3 w-3" /> Eliminar</button>
+            <input type="time" value={pickup.horarioReady || ''} onChange={e => onUpdate(pickup.id, { horarioReady: e.target.value || null })}
+              className="h-7 px-2 rounded-lg border border-blue-200 text-[10px] bg-blue-50/50 max-w-[100px]" title="Horario Ready" />
             <div className="flex-1" />
             <select value={pickup.choferAsignado || ''} onChange={e => onUpdate(pickup.id, { choferAsignado: e.target.value || null })} className="h-7 px-2 rounded-lg border border-zinc-200 text-[10px] bg-white max-w-[130px]">
               <option value="">Sin chofer</option>{CHOFERES.map(c => <option key={c} value={c}>{c}</option>)}

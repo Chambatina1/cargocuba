@@ -27,6 +27,7 @@ async function ensureTable() {
         "lat" DOUBLE PRECISION NOT NULL,
         "lng" DOUBLE PRECISION NOT NULL,
         "notas" TEXT,
+        "horarioReady" TEXT,
         "estado" TEXT NOT NULL DEFAULT 'esperando',
         "choferAsignado" TEXT,
         "ordenRuta" INTEGER,
@@ -64,7 +65,7 @@ export async function GET(req: NextRequest) {
 
     const data = await prisma.pickupRequest.findMany({
       where,
-      orderBy: [{ ordenRuta: 'asc' }, { createdAt: 'asc' }],
+      orderBy: [{ horarioReady: 'asc' }, { ordenRuta: 'asc' }, { createdAt: 'asc' }],
     });
 
     return NextResponse.json({ ok: true, data });
@@ -77,7 +78,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     await ensureTable();
-    const { nombre, telefono, direccion, lat, lng, notas } = await req.json();
+    const { nombre, telefono, direccion, lat, lng, notas, horarioReady } = await req.json();
 
     if (!nombre || !direccion || lat == null || lng == null) {
       return NextResponse.json({ ok: false, error: 'Nombre, direccion y ubicacion son requeridos' }, { status: 400 });
@@ -87,7 +88,7 @@ export async function POST(req: NextRequest) {
     }
 
     const pickup = await prisma.pickupRequest.create({
-      data: { nombre, telefono: telefono || null, direccion, lat, lng, notas: notas || null },
+      data: { nombre, telefono: telefono || null, direccion, lat, lng, notas: notas || null, horarioReady: horarioReady || null },
     });
 
     return NextResponse.json({ ok: true, data: pickup });
@@ -102,7 +103,7 @@ export async function PUT(req: NextRequest) {
 
   try {
     await ensureTable();
-    const { id, estado, choferAsignado, ordenRuta, notas, fechaRecogida } = await req.json();
+    const { id, estado, choferAsignado, ordenRuta, notas, horarioReady, fechaRecogida } = await req.json();
     if (!id) return NextResponse.json({ ok: false, error: 'ID requerido' }, { status: 400 });
 
     const updateData: any = {};
@@ -110,6 +111,7 @@ export async function PUT(req: NextRequest) {
     if (choferAsignado !== undefined) updateData.choferAsignado = choferAsignado;
     if (ordenRuta !== undefined) updateData.ordenRuta = ordenRuta;
     if (notas !== undefined) updateData.notas = notas;
+    if (horarioReady !== undefined) updateData.horarioReady = horarioReady || null;
     if (fechaRecogida !== undefined) updateData.fechaRecogida = fechaRecogida ? new Date(fechaRecogida) : null;
 
     const pickup = await prisma.pickupRequest.update({ where: { id }, data: updateData });
