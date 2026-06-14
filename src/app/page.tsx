@@ -375,7 +375,9 @@ export default function CargoCubaPage() {
         const estadoLabel = isVerde ? 'En Espera' : 'Recogido';
         const estadoColor = isVerde ? VERDE : MORADO;
         const distFromBase = distMilesFromBase(p.lat, p.lng).toFixed(1);
-        marker.bindPopup(`<div style="font-family:system-ui;min-width:180px;"><strong style="font-size:13px;">${p.nombre}</strong><div style="font-size:11px;color:#666;margin-top:2px;">${p.direccion}</div><div style="margin-top:4px;font-size:11px;color:#dc2626;font-weight:600;">${distFromBase} mi de la Base</div>${p.horarioReady ? `<div style="margin-top:4px;font-size:11px;color:#2563eb;font-weight:600;">Ready: ${p.horarioReady}</div>` : ''}<div style="margin-top:6px;display:flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:${estadoColor};display:inline-block;"></span><span style="font-size:11px;font-weight:600;color:${estadoColor};">${estadoLabel}</span></div>${p.choferAsignado ? `<div style="font-size:11px;margin-top:4px;color:#555;">Chofer: ${p.choferAsignado}</div>` : ''}${p.telefono ? `<a href="tel:${p.telefono}" style="display:inline-block;margin-top:6px;font-size:12px;color:#2563eb;font-weight:600;">${p.telefono}</a>` : ''}</div>`);
+        const gmapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`;
+        const wazeUrl = `https://waze.com/ul?ll=${p.lat},${p.lng}&navigate=yes`;
+        marker.bindPopup(`<div style="font-family:system-ui;min-width:200px;"><strong style="font-size:13px;">${p.nombre}</strong><div style="font-size:11px;color:#666;margin-top:2px;">${p.direccion}</div><div style="margin-top:4px;font-size:11px;color:#dc2626;font-weight:600;">${distFromBase} mi de la Base</div>${p.horarioReady ? `<div style="margin-top:4px;font-size:11px;color:#2563eb;font-weight:600;">Ready: ${p.horarioReady}</div>` : ''}<div style="margin-top:6px;display:flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:${estadoColor};display:inline-block;"></span><span style="font-size:11px;font-weight:600;color:${estadoColor};">${estadoLabel}</span></div>${p.choferAsignado ? `<div style="font-size:11px;margin-top:4px;color:#555;">Chofer: ${p.choferAsignado}</div>` : ''}<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;"><a href="${gmapsUrl}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:8px;background:#4285f4;color:#fff;font-size:11px;font-weight:600;text-decoration:none;">Google Maps</a><a href="${wazeUrl}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:8px;background:#59c657;color:#fff;font-size:11px;font-weight:600;text-decoration:none;">Waze</a>${p.telefono ? `<a href="tel:${p.telefono}" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:8px;background:#2563eb;color:#fff;font-size:11px;font-weight:600;text-decoration:none;">${p.telefono}</a>` : ''}</div></div>`);
       }
       bounds.push([p.lat, p.lng]); markersRef.current.push(marker);
     });
@@ -408,7 +410,7 @@ export default function CargoCubaPage() {
       });
       const dM = L.marker([d.lat, d.lng], { icon: pulseIcon, zIndexOffset: 3000 }).addTo(mapInstRef.current);
       const distFromBase = distMilesFromBase(d.lat, d.lng).toFixed(1);
-      dM.bindPopup(`<div style="font-family:system-ui;min-width:180px;"><strong style="font-size:13px;">${d.nombre}</strong><div style="font-size:11px;color:${CHOFER_COLOR};font-weight:600;margin-top:2px;">Chofer EN VIVO</div><div style="font-size:11px;color:#666;margin-top:2px;">${d.phone}</div><div style="margin-top:4px;font-size:11px;color:#dc2626;font-weight:600;">${distFromBase} mi de la Base</div></div>`);
+      dM.bindPopup(`<div style="font-family:system-ui;min-width:200px;"><strong style="font-size:13px;">${d.nombre}</strong><div style="font-size:11px;color:${CHOFER_COLOR};font-weight:600;margin-top:2px;">Chofer EN VIVO</div><div style="font-size:11px;color:#666;margin-top:2px;">${d.phone}</div><div style="margin-top:4px;font-size:11px;color:#dc2626;font-weight:600;">${distFromBase} mi de la Base</div><div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;"><a href="https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lng}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:8px;background:#4285f4;color:#fff;font-size:11px;font-weight:600;text-decoration:none;">Google Maps</a><a href="tel:${d.phone}" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:8px;background:#2563eb;color:#fff;font-size:11px;font-weight:600;text-decoration:none;">${d.phone}</a></div></div>`);
       bounds.push([d.lat, d.lng]); markersRef.current.push(dM);
     });
 
@@ -769,31 +771,26 @@ export default function CargoCubaPage() {
           <motion.button
             whileTap={{ scale: 0.92 }}
             onClick={() => handleFollowDriver()}
-            className={`flex items-center gap-2 px-3.5 py-2.5 rounded-2xl shadow-2xl border font-bold text-[11px] transition-all ${
+            className={`flex items-center gap-2 px-4 py-3 rounded-2xl shadow-2xl border font-bold text-xs transition-all ${
               followingDriver
-                ? 'bg-blue-600 text-white border-blue-700 shadow-blue-200'
-                : 'bg-white text-zinc-800 border-zinc-200 hover:bg-blue-50 hover:border-blue-300'
+                ? 'bg-blue-600 text-white border-blue-700 shadow-blue-200 shadow-lg'
+                : 'bg-white text-zinc-800 border-blue-300 hover:bg-blue-50 shadow-blue-100 shadow-lg'
             }`}
             style={{ touchAction: 'manipulation' }}>
             {followingDriver ? (
               <>
-                <Radar className="h-4 w-4 animate-spin" style={{ animationDuration: '3s' }} />
+                <Radar className="h-5 w-5 animate-spin" style={{ animationDuration: '3s' }} />
                 <span>Siguiendo{followDriverPhone ? `: ${drivers.find(d => d.phone === followDriverPhone)?.nombre || ''}` : ''}</span>
               </>
             ) : (
               <>
-                <Navigation className="h-4 w-4 text-blue-600" />
-                <span>Seguir Chofer</span>
-                <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-[9px] font-bold flex items-center justify-center">{activeDriversCount}</span>
+                <Navigation className="h-5 w-5 text-blue-600" />
+                <span>Seguir Chofer EN VIVO</span>
+                <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold flex items-center justify-center">{activeDriversCount}</span>
               </>
             )}
           </motion.button>
-        ) : (
-          <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/80 backdrop-blur-sm border border-zinc-200 text-[10px] text-zinc-400">
-            <Truck className="h-3.5 w-3.5" />
-            Sin choferes activos
-          </div>
-        )}
+        ) : null}
       </div>
 
       {/* ═══════════ FOLLOWING DRIVER INFO BAR ═══════════ */}
@@ -856,39 +853,39 @@ export default function CargoCubaPage() {
 
       {/* ═══════════ BOTTOM BUTTONS (over map, only when no panel) ═══════════ */}
       {panel === 'none' && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] flex gap-3">
-          <motion.button whileTap={{ scale: 0.95 }} onClick={() => { setSearchQuery(''); setSuggestions([]); setPanel('clientForm'); }}
-            className="flex flex-col items-center gap-1.5 bg-white rounded-2xl px-5 py-3.5 shadow-2xl border border-zinc-100 hover:shadow-3xl transition-shadow"
+        <div className="absolute bottom-4 left-2 right-2 z-[1000] flex justify-around">
+          <motion.button whileTap={{ scale: 0.92 }} onClick={() => { setSearchQuery(''); setSuggestions([]); setPanel('clientForm'); }}
+            className="flex flex-col items-center gap-1 bg-white rounded-2xl px-3 py-2.5 shadow-2xl border border-zinc-100"
             style={{ touchAction: 'manipulation' }}>
-            <div className="w-11 h-11 rounded-full bg-emerald-500 flex items-center justify-center"><ShoppingCart className="h-5 w-5 text-white" /></div>
-            <span className="text-[11px] font-bold text-zinc-700">Pedir Recogida</span>
+            <div className="w-9 h-9 rounded-full bg-emerald-500 flex items-center justify-center"><ShoppingCart className="h-4 w-4 text-white" /></div>
+            <span className="text-[9px] font-bold text-zinc-700 leading-tight">Pedir</span>
           </motion.button>
 
-          <motion.button whileTap={{ scale: 0.95 }} onClick={() => setPanel('driver')}
-            className="flex flex-col items-center gap-1.5 bg-white rounded-2xl px-5 py-3.5 shadow-2xl border border-zinc-100 hover:shadow-3xl transition-shadow relative"
+          <motion.button whileTap={{ scale: 0.92 }} onClick={() => setPanel('driver')}
+            className="flex flex-col items-center gap-1 bg-white rounded-2xl px-3 py-2.5 shadow-2xl border border-zinc-100 relative"
             style={{ touchAction: 'manipulation' }}>
-            <div className="w-11 h-11 rounded-full bg-blue-500 flex items-center justify-center"><Truck className="h-5 w-5 text-white" /></div>
-            <span className="text-[11px] font-bold text-zinc-700">Soy Chofer</span>
-            {driverActive && <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white animate-pulse" />}
+            <div className="w-9 h-9 rounded-full bg-blue-500 flex items-center justify-center"><Truck className="h-4 w-4 text-white" /></div>
+            <span className="text-[9px] font-bold text-zinc-700 leading-tight">Chofer</span>
+            {driverActive && <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white animate-pulse" />}
           </motion.button>
 
-          <motion.button whileTap={{ scale: 0.95 }} onClick={toggleSelectMode}
-            className={`flex flex-col items-center gap-1.5 rounded-2xl px-5 py-3.5 shadow-2xl border relative ${selectMode ? 'bg-amber-500 border-amber-600' : 'bg-white border-zinc-100 hover:shadow-3xl'} transition-all`}
+          <motion.button whileTap={{ scale: 0.92 }} onClick={toggleSelectMode}
+            className={`flex flex-col items-center gap-1 rounded-2xl px-3 py-2.5 shadow-2xl border relative ${selectMode ? 'bg-amber-500 border-amber-600' : 'bg-white border-zinc-100'} transition-all`}
             style={{ touchAction: 'manipulation' }}>
-            <div className={`w-11 h-11 rounded-full flex items-center justify-center ${selectMode ? 'bg-white' : 'bg-amber-500'}`}>
-              <Route className={`h-5 w-5 ${selectMode ? 'text-amber-500' : 'text-white'}`} />
+            <div className={`w-9 h-9 rounded-full flex items-center justify-center ${selectMode ? 'bg-white' : 'bg-amber-500'}`}>
+              <Route className={`h-4 w-4 ${selectMode ? 'text-amber-500' : 'text-white'}`} />
             </div>
-            <span className={`text-[11px] font-bold ${selectMode ? 'text-white' : 'text-zinc-700'}`}>Medir</span>
+            <span className={`text-[9px] font-bold leading-tight ${selectMode ? 'text-white' : 'text-zinc-700'}`}>Medir</span>
             {selectMode && selectedIds.length > 0 && (
-              <div className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 bg-white text-amber-600 text-[10px] font-bold rounded-full flex items-center justify-center px-1 border-2 border-amber-400">{selectedIds.length}</div>
+              <div className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 bg-white text-amber-600 text-[9px] font-bold rounded-full flex items-center justify-center px-0.5 border-2 border-amber-400">{selectedIds.length}</div>
             )}
           </motion.button>
 
-          <motion.button whileTap={{ scale: 0.95 }} onClick={() => { setAdminTab('lista'); setPanel('admin'); }}
-            className="flex flex-col items-center gap-1.5 bg-white rounded-2xl px-5 py-3.5 shadow-2xl border border-zinc-100 hover:shadow-3xl transition-shadow"
+          <motion.button whileTap={{ scale: 0.92 }} onClick={() => { setAdminTab('lista'); setPanel('admin'); }}
+            className="flex flex-col items-center gap-1 bg-white rounded-2xl px-3 py-2.5 shadow-2xl border border-zinc-100"
             style={{ touchAction: 'manipulation' }}>
-            <div className="w-11 h-11 rounded-full bg-purple-500 flex items-center justify-center"><Shield className="h-5 w-5 text-white" /></div>
-            <span className="text-[11px] font-bold text-zinc-700">Admin</span>
+            <div className="w-9 h-9 rounded-full bg-purple-500 flex items-center justify-center"><Shield className="h-4 w-4 text-white" /></div>
+            <span className="text-[9px] font-bold text-zinc-700 leading-tight">Admin</span>
           </motion.button>
         </div>
       )}
