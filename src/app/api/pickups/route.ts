@@ -3,11 +3,7 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-const ADMIN_KEY = 'chambatina2024';
-
-function isAdmin(req: NextRequest): boolean {
-  return req.headers.get('x-admin-key') === ADMIN_KEY;
-}
+// No password — admin is open access
 
 // Auto-create table if missing (for first deploy)
 let tableReady = false;
@@ -99,8 +95,6 @@ export async function POST(req: NextRequest) {
 
 // PUT — update pickup (admin)
 export async function PUT(req: NextRequest) {
-  if (!isAdmin(req)) return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 });
-
   try {
     await ensureTable();
     const { id, estado, choferAsignado, ordenRuta, notas, horarioReady, fechaRecogida } = await req.json();
@@ -123,8 +117,6 @@ export async function PUT(req: NextRequest) {
 
 // DELETE — delete pickup (admin)
 export async function DELETE(req: NextRequest) {
-  if (!isAdmin(req)) return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 });
-
   try {
     await ensureTable();
     const { searchParams } = new URL(req.url);

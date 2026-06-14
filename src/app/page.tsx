@@ -187,9 +187,8 @@ export default function CargoCubaPage() {
   const [followingDriver, setFollowingDriver] = useState(false);
   const [followDriverPhone, setFollowDriverPhone] = useState<string | null>(null);
 
-  // ─── Admin ───
+  // ─── Admin (no password — direct access) ───
   const [adminChofer, setAdminChofer] = useState('');
-  const [adminLoggedIn, setAdminLoggedIn] = useState(true);
   const [adminTab, setAdminTab] = useState<'lista' | 'distancias' | 'ruta'>('lista');
   const [distMatrix, setDistMatrix] = useState<{ from: string; to: string; distMi: number }[]>([]);
   const [calculatingDist, setCalculatingDist] = useState(false);
@@ -513,7 +512,7 @@ export default function CargoCubaPage() {
   const updatePickup = async (id: number, data: any) => {
     try {
       const r = await fetch('/api/pickups', {
-        method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-admin-key': 'chambatina2024' },
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, ...data }),
       });
       const j = await r.json(); if (j.ok) load(); else toast.error(j.error || 'Error');
@@ -522,7 +521,7 @@ export default function CargoCubaPage() {
 
   const deletePickup = async (id: number) => {
     try {
-      const r = await fetch(`/api/pickups?id=${id}`, { method: 'DELETE', headers: { 'x-admin-key': 'chambatina2024' } });
+      const r = await fetch(`/api/pickups?id=${id}`, { method: 'DELETE' });
       const j = await r.json(); if (j.ok) { toast.success('Eliminada'); load(); }
     } catch {}
   };
@@ -713,7 +712,10 @@ export default function CargoCubaPage() {
                     <span className="text-zinc-500">{dist} mi de la Base</span>
                     <span className="text-zinc-400">{d.lat.toFixed(4)}, {d.lng.toFixed(4)}</span>
                   </div>
-                  {d.phone && <p className="text-[10px] text-zinc-400">{d.phone}</p>}
+                  <div className="flex items-center justify-between text-[10px]">
+                    {d.phone && <span className="text-zinc-400">{d.phone}</span>}
+                    <span className="text-zinc-400">Actualizado: {new Date(d.updatedAt).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                  </div>
                 </div>
               );
             })()}
@@ -755,7 +757,7 @@ export default function CargoCubaPage() {
             {driverActive && <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white animate-pulse" />}
           </motion.button>
 
-          <motion.button whileTap={{ scale: 0.95 }} onClick={() => { setAdminLoggedIn(true); setAdminTab('lista'); setPanel('admin'); }}
+          <motion.button whileTap={{ scale: 0.95 }} onClick={() => { setAdminTab('lista'); setPanel('admin'); }}
             className="flex flex-col items-center gap-1.5 bg-white rounded-2xl px-5 py-3.5 shadow-2xl border border-zinc-100 hover:shadow-3xl transition-shadow"
             style={{ touchAction: 'manipulation' }}>
             <div className="w-11 h-11 rounded-full bg-purple-500 flex items-center justify-center"><Shield className="h-5 w-5 text-white" /></div>
@@ -944,13 +946,13 @@ export default function CargoCubaPage() {
           PANEL: ADMIN
           ═══════════════════════════════════════════════════════════════════ */}
       <AnimatePresence>
-        {panel === 'admin' && adminLoggedIn && (
+        {panel === 'admin' && (
           <motion.div initial={{ x: 300 }} animate={{ x: 0 }} exit={{ x: 300 }}
             className="absolute top-0 right-0 bottom-0 z-[1001] w-full max-w-md bg-white/95 backdrop-blur-sm shadow-2xl border-l border-zinc-200 flex flex-col">
 
             {/* Admin header */}
             <div className="px-4 py-3 border-b border-zinc-100 flex items-center gap-3 bg-white flex-shrink-0">
-              <button onClick={() => { setOptimizedRoute([]); setRouteData(null); setAdminLoggedIn(false); setPanel('none'); }} className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center"><ArrowLeft className="h-4 w-4 text-zinc-600" /></button>
+              <button onClick={() => { setOptimizedRoute([]); setRouteData(null); setPanel('none'); }} className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center"><ArrowLeft className="h-4 w-4 text-zinc-600" /></button>
               <h3 className="font-bold text-sm text-zinc-900 flex-1">Administracion</h3>
               <select value={adminChofer} onChange={e => setAdminChofer(e.target.value)} className="h-7 px-2 rounded-lg border border-zinc-200 text-[10px] bg-white">
                 <option value="">Todos</option>{CHOFERES.map(c => <option key={c} value={c}>{c}</option>)}
