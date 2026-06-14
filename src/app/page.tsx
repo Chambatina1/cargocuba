@@ -616,6 +616,18 @@ export default function CargoCubaPage() {
   const recogidosCount = pickups.filter(p => p.estado === 'recogido').length;
   const activeDriversCount = drivers.filter(d => d.activo).length;
 
+  // ─── Admin login handler ───
+  const doAdminLogin = () => {
+    if (adminPassword === 'chambatina2024') {
+      setAdminLoggedIn(true);
+      setAdminTab('lista');
+      setPanel('admin');
+      toast.success('Admin activo');
+    } else {
+      toast.error('Clave incorrecta');
+    }
+  };
+
   // ═══════════════════════════════════════════════════════════════════════════
   // RENDER
   // ═══════════════════════════════════════════════════════════════════════════
@@ -954,10 +966,10 @@ export default function CargoCubaPage() {
                 <h3 className="font-bold text-lg text-zinc-900">Admin</h3>
                 <p className="text-xs text-zinc-500">CargoCuba</p>
               </div>
-              <input type="password" placeholder="Clave" value={adminPassword} onChange={e => setAdminPassword(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && adminPassword === 'chambatina2024' && (() => { setAdminLoggedIn(true); setPanel('admin'); toast.success('Admin activo'); })()}
+              <input type="password" autoFocus placeholder="Clave" value={adminPassword} onChange={e => setAdminPassword(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') doAdminLogin(); }}
                 className="w-full h-11 px-4 rounded-xl border border-zinc-200 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-purple-300 bg-zinc-50" />
-              <button onClick={() => { if (adminPassword === 'chambatina2024') { setAdminLoggedIn(true); setPanel('admin'); toast.success('Admin activo'); } else toast.error('Clave incorrecta'); }}
+              <button onClick={doAdminLogin}
                 className="w-full h-11 rounded-xl bg-purple-600 text-white font-bold text-sm hover:bg-purple-700 shadow-lg" style={{ touchAction: 'manipulation' }}>Entrar</button>
               <button onClick={() => setPanel('none')} className="w-full mt-3 text-center text-xs text-zinc-400">Cancelar</button>
             </motion.div>
