@@ -191,6 +191,11 @@ export default function CargoCubaPage() {
   const [adminPassword, setAdminPassword] = useState('');
   const [adminChofer, setAdminChofer] = useState('');
   const [adminLoggedIn, setAdminLoggedIn] = useState(false);
+  const [adminTab, setAdminTab] = useState<'lista' | 'distancias' | 'ruta'>('lista');
+  const [distMatrix, setDistMatrix] = useState<{ from: string; to: string; distMi: number }[]>([]);
+  const [calculatingDist, setCalculatingDist] = useState(false);
+  const [scheduledDriver, setScheduledDriver] = useState('');
+  const [scheduling, setScheduling] = useState(false);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // LOAD LEAFLET
@@ -523,6 +528,28 @@ export default function CargoCubaPage() {
     } catch {}
   };
 
+  // ─── Compute distance matrix between all pickups + base ───
+  const handleCalcDistances = async () => {
+    const active = pickups.filter(p => p.estado !== 'cancelado');
+    if (active.length < 2) { toast.error('Necesitas al menos 2 clientes'); return; }
+    setCalculatingDist(true);
+    try {
+      // Build pairwise distances using haversine (fast, no API needed)
+      const matrix: { from: string; to: string; distMi: number }[] = [];
+      const all = [{ name: 'BASE', lat: BASE_LAT, lng: BASE_LNG }, ...active.map(p => ({ name: p.nombre, lat: p.lat, lng: p.lng }))];
+      for (let i = 0; i < all.length; i++) {
+        for (let j = i + 1; j < all.length; j++) {
+          const dMi = haversine(all[i].lat, all[i].lng, all[j].lat, all[j].lng) * 0.621371;
+          matrix.push({ from: all[i].name, to: all[j].name, distMi: Math.round(dMi * 10) / 10 });
+        }
+      }
+      setDistMatrix(matrix);
+      setAdminTab('distancias');
+      toast.success(`Matriz de distancias: ${all.length} puntos, ${matrix.length} pares`);
+    } catch (err: any) { toast.error('Error: ' + (err.message || '')); }
+    setCalculatingDist(false);
+  };
+
   const handleOptimize = async () => {
     const esperando = pickups.filter(p => p.estado === 'esperando');
     if (esperando.length < 1) { toast.error('No hay clientes en verde'); return; }
@@ -534,12 +561,55 @@ export default function CargoCubaPage() {
       const result = await calcRoute(allPoints);
       setRouteData(result);
       for (let i = 0; i < ordered.length; i++) await updatePickup(ordered[i].id, { ordenRuta: i + 1 });
-      const firstMi = result.legs[0] ? (result.legs[0].distance * 0.000621371).toFixed(1) : '0';
-      const timeGroups = [...new Set(ordered.map(p => p.horarioReady || 'Sin horario'))].sort();
-      toast.success(`Ruta optimizada por horario: ${ordered.length} paradas, ${fmtDist(result.totalDistance)}, ${fmtTime(result.totalDuration)}`);
+      toast.success(`Ruta optimizada: ${ordered.length} paradas, ${fmtDist(result.totalDistance)}, ${fmtTime(result.totalDuration)}`);
+      setAdminTab('ruta');
     } catch (err: any) { toast.error('Error ruta: ' + (err.message || '')); }
     setOptimizing(false);
   };
+
+  // ─── Schedule route to driver (assign chofer to all stops) ───
+  const handleScheduleRoute = async () => {
+    if (optimizedRoute.length === 0) { toast.error('Optimiza la ruta primero'); return; }
+    if (!scheduledDriver) { toast.error('Selecciona un chofer'); return; }
+    setScheduling(true);
+    try {
+      for (const p of optimizedRoute) {
+        await updatePickup(p.id, { choferAsignado: scheduledDriver });
+      }
+      toast.success(`Ruta programada para ${scheduledDriver}: ${optimizedRoute.length} paradas`);
+    } catch { toast.error('Error al programar'); }
+    setScheduling(false);
+  };
+
+  // ─── Cumulative route info for scheduling ───
+  const routeStops = routeData && optimizedRoute.length > 0
+    ? (() => {
+        const stops: { name: string; distFromPrev: number; cumDist: number; timeFromPrev: number; cumTime: number; distFromBase: number; ready?: string }[] = [];
+        let cumD = 0, cumT = 0;
+        // Leg 0 = Base to stop 1
+        for (let i = 0; i < optimizedRoute.length; i++) {
+          const leg = routeData.legs[i + 1] || { distance: 0, duration: 0 };
+          const p = optimizedRoute[i];
+          if (i === 0 && routeData.legs[0]) {
+            cumD = routeData.legs[0].distance;
+            cumT = routeData.legs[0].duration;
+          } else {
+            cumD += leg.distance;
+            cumT += leg.duration;
+          }
+          stops.push({
+            name: p.nombre,
+            distFromPrev: i === 0 ? (routeData.legs[0]?.distance || 0) : leg.distance,
+            cumDist: cumD,
+            timeFromPrev: i === 0 ? (routeData.legs[0]?.duration || 0) : leg.duration,
+            cumTime: cumT,
+            distFromBase: haversine(BASE_LAT, BASE_LNG, p.lat, p.lng) * 0.621371,
+            ready: p.horarioReady || undefined,
+          });
+        }
+        return stops;
+      })()
+    : [];
 
   // ─── Stats ───
   const esperandoCount = pickups.filter(p => p.estado === 'esperando').length;
@@ -924,43 +994,197 @@ export default function CargoCubaPage() {
               </div>
             )}
 
-            {/* Route optimize bar */}
-            <div className="px-4 py-2 border-b border-zinc-100 flex items-center gap-2 bg-white/80 flex-shrink-0">
+            {/* Admin tabs */}
+            <div className="px-4 py-1.5 border-b border-zinc-100 flex items-center gap-1 bg-zinc-50/80 flex-shrink-0">
+              {(['lista', 'distancias', 'ruta'] as const).map(t => (
+                <button key={t} onClick={() => setAdminTab(t)}
+                  className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${adminTab === t ? 'bg-white text-zinc-900 shadow-sm border border-zinc-200' : 'text-zinc-400 hover:text-zinc-600'}`}
+                  style={{ touchAction: 'manipulation' }}>
+                  {t === 'lista' ? `Lista (${pickups.length})` : t === 'distancias' ? 'Distancias' : 'Ruta'}
+                </button>
+              ))}
+              <div className="flex-1" />
               <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-700"><span className="w-2 h-2 rounded-full bg-emerald-500" />{esperandoCount}</span>
               <span className="flex items-center gap-1 text-[10px] font-bold text-purple-700"><span className="w-2 h-2 rounded-full bg-purple-500" />{recogidosCount}</span>
-              <div className="flex-1" />
-              <button onClick={handleOptimize} disabled={optimizing || esperandoCount < 1}
-                className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 hover:bg-emerald-700 disabled:opacity-40"
-                style={{ touchAction: 'manipulation' }}>
-                {optimizing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}{optimizing ? '...' : 'Optimizar'}
-              </button>
-              {optimizedRoute.length > 0 && <button onClick={() => { setOptimizedRoute([]); setRouteData(null); }} className="w-7 h-7 rounded-lg border border-zinc-200 flex items-center justify-center text-zinc-400"><RotateCcw className="h-3 w-3" /></button>}
             </div>
 
-            {/* Route summary */}
-            {routeData && optimizedRoute.length > 0 && (
-              <div className="bg-blue-50 border-b border-blue-200 px-4 py-2 flex items-center gap-2 flex-shrink-0">
-                <Route className="h-3.5 w-3.5 text-blue-600" />
-                <p className="text-[10px] font-bold text-blue-800">{optimizedRoute.length} paradas · {fmtDist(routeData.totalDistance)} · {fmtTime(routeData.totalDuration)}</p>
+            {/* Action bar for lista tab */}
+            {adminTab === 'lista' && (
+              <div className="px-4 py-2 border-b border-zinc-100 flex items-center gap-2 bg-white/80 flex-shrink-0">
+                <button onClick={handleOptimize} disabled={optimizing || esperandoCount < 1}
+                  className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 hover:bg-emerald-700 disabled:opacity-40"
+                  style={{ touchAction: 'manipulation' }}>
+                  {optimizing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}{optimizing ? '...' : 'Optimizar'}
+                </button>
+                <button onClick={handleCalcDistances} disabled={calculatingDist || pickups.filter(p => p.estado !== 'cancelado').length < 2}
+                  className="bg-orange-500 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 hover:bg-orange-600 disabled:opacity-40"
+                  style={{ touchAction: 'manipulation' }}>
+                  {calculating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Route className="h-3 w-3" />}{calculating ? '...' : 'Distancias'}
+                </button>
+                {optimizedRoute.length > 0 && <button onClick={() => { setOptimizedRoute([]); setRouteData(null); }} className="w-7 h-7 rounded-lg border border-zinc-200 flex items-center justify-center text-zinc-400"><RotateCcw className="h-3 w-3" /></button>}
               </div>
             )}
 
-            {/* Pickup list */}
+            {/* Route summary (when optimized) */}
+            {routeData && optimizedRoute.length > 0 && adminTab === 'ruta' && (
+              <div className="bg-blue-50 border-b border-blue-200 px-4 py-2.5 flex-shrink-0">
+                <div className="flex items-center gap-2 mb-2">
+                  <Route className="h-3.5 w-3.5 text-blue-600" />
+                  <p className="text-[10px] font-bold text-blue-800">{optimizedRoute.length} paradas · {fmtDist(routeData.totalDistance)} total · {fmtTime(routeData.totalDuration)}</p>
+                </div>
+                {/* Schedule driver */}
+                <div className="flex items-center gap-2">
+                  <select value={scheduledDriver} onChange={e => setScheduledDriver(e.target.value)} className="h-7 px-2 rounded-lg border border-blue-200 text-[10px] bg-white flex-1">
+                    <option value="">Chofer...</option>{CHOFERES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <button onClick={handleScheduleRoute} disabled={scheduling || !scheduledDriver}
+                    className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 hover:bg-blue-700 disabled:opacity-40"
+                    style={{ touchAction: 'manipulation' }}>
+                    {scheduling ? <Loader2 className="h-3 w-3 animate-spin" /> : <Truck className="h-3 w-3" />}{scheduling ? '...' : 'Programar Chofer'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Tab: PICKUP LIST */}
+            {adminTab === 'lista' && (
             <div className="flex-1 overflow-y-auto divide-y divide-zinc-50">
               {loading ? <div className="flex items-center justify-center h-20"><Loader2 className="h-5 w-5 text-zinc-300 animate-spin" /></div> :
               pickups.length === 0 ? <div className="p-8 text-center"><Users className="h-7 w-7 text-zinc-300 mx-auto mb-2" /><p className="text-xs text-zinc-400">Sin solicitudes</p></div> :
               (optimizedRoute.length > 0 ? optimizedRoute : pickups).map(p => (
                 <AdminCard key={p.id} pickup={p} onUpdate={updatePickup} onDelete={deletePickup}
                   routeIdx={optimizedRoute.indexOf(p)} showRouteNum={optimizedRoute.length > 0}
-                  leg={routeData?.legs[optimizedRoute.indexOf(p)]} />
+                  leg={routeData?.legs[optimizedRoute.indexOf(p) + 1]} />
               ))}
             </div>
+            )}
+
+            {/* Tab: DISTANCE MATRIX */}
+            {adminTab === 'distancias' && (
+            <div className="flex-1 overflow-y-auto p-4">
+              {distMatrix.length === 0 ? (
+                <div className="p-8 text-center">
+                  <Route className="h-7 w-7 text-zinc-300 mx-auto mb-2" />
+                  <p className="text-xs text-zinc-400 mb-3">Calcula las distancias entre todos los clientes</p>
+                  <button onClick={handleCalcDistances} disabled={calculatingDist || pickups.filter(p => p.estado !== 'cancelado').length < 2}
+                    className="bg-orange-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 mx-auto hover:bg-orange-600 disabled:opacity-40"
+                    style={{ touchAction: 'manipulation' }}>
+                    {calculating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Route className="h-4 w-4" />}{calculating ? 'Calculando...' : 'Calcular Distancias'}
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-[10px] font-bold text-zinc-500 mb-2">DISTANCIAS ENTRE PUNTOS (millas)</p>
+                  {/* From Base section */}
+                  <div className="bg-red-50 border border-red-100 rounded-xl p-3">
+                    <p className="text-[10px] font-bold text-red-600 mb-2 flex items-center gap-1"><MapPin className="h-3 w-3" />Desde la Base ({BASE_NAME})</p>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {distMatrix.filter(m => m.from === 'BASE').sort((a, b) => a.distMi - b.distMi).map((m, i) => (
+                        <div key={i} className="bg-white rounded-lg px-2.5 py-1.5 flex items-center justify-between">
+                          <span className="text-[10px] text-zinc-700 truncate max-w-[100px]">{m.to}</span>
+                          <span className="text-[10px] font-bold text-red-600">{m.distMi} mi</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Between clients */}
+                  <p className="text-[10px] font-bold text-zinc-500 mt-3 mb-1">ENTRE CLIENTES</p>
+                  {distMatrix.filter(m => m.from !== 'BASE').map((m, i) => (
+                    <div key={i} className="bg-white border border-zinc-100 rounded-lg px-3 py-2 flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-[10px] font-semibold text-zinc-700 truncate">{m.from}</span>
+                        <ArrowLeft className="h-3 w-3 text-zinc-300 rotate-180 flex-shrink-0" />
+                        <span className="text-[10px] font-semibold text-zinc-700 truncate">{m.to}</span>
+                      </div>
+                      <span className={`text-[10px] font-bold ml-2 flex-shrink-0 ${m.distMi < 2 ? 'text-emerald-600' : m.distMi < 5 ? 'text-orange-600' : 'text-red-600'}`}>{m.distMi} mi</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            )}
+
+            {/* Tab: ROUTE / SCHEDULE */}
+            {adminTab === 'ruta' && (
+            <div className="flex-1 overflow-y-auto">
+              {optimizedRoute.length === 0 || !routeData ? (
+                <div className="p-8 text-center">
+                  <Zap className="h-7 w-7 text-zinc-300 mx-auto mb-2" />
+                  <p className="text-xs text-zinc-400 mb-3">Optimiza la ruta primero para ver el itinerario completo</p>
+                  <button onClick={handleOptimize} disabled={optimizing || esperandoCount < 1}
+                    className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 mx-auto hover:bg-emerald-700 disabled:opacity-40"
+                    style={{ touchAction: 'manipulation' }}>
+                    {optimizing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}{optimizing ? '...' : 'Optimizar Ruta'}
+                  </button>
+                </div>
+              ) : (
+                <div className="p-4 space-y-2">
+                  <p className="text-[10px] font-bold text-zinc-500 mb-1">ITINERARIO COMPLETO CON DISTANCIAS</p>
+                  {/* Base start */}
+                  <div className="bg-red-50 border border-red-100 rounded-xl p-3 flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">B</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] font-bold text-zinc-800">Base — {BASE_NAME}</p>
+                      <p className="text-[9px] text-zinc-500">Punto de partida</p>
+                    </div>
+                  </div>
+                  {/* Stops with leg distances */}
+                  {routeStops.map((stop, i) => (
+                    <div key={i}>
+                      {/* Leg connector */}
+                      <div className="ml-4 pl-4 border-l-2 border-blue-300 py-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[9px] text-blue-600 font-bold">Tramo {i + 1}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[9px] text-zinc-500">Directa: {(stop.distFromPrev * 0.000621371).toFixed(1)} mi</span>
+                            {routeData.legs[i + 1] && <span className="text-[9px] text-blue-600 font-semibold">Ruta: {fmtDist(routeData.legs[i + 1].distance)} · {fmtTime(routeData.legs[i + 1].duration)}</span>}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="bg-white border border-zinc-200 rounded-xl p-3 flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">{i + 1}</div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] font-bold text-zinc-800">{stop.name}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[9px] text-red-500 font-semibold">{stop.distFromBase.toFixed(1)} mi de la Base</span>
+                            {stop.ready && <span className="text-[9px] bg-blue-100 text-blue-700 font-bold px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" />{stop.ready}</span>}
+                          </div>
+                          <p className="text-[9px] text-zinc-400 mt-0.5">Acumulado: {fmtDist(stop.cumDist)} · {fmtTime(stop.cumTime)} desde la Base</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {/* Total summary */}
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 mt-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Route className="h-4 w-4 text-emerald-600" />
+                      <span className="text-[11px] font-bold text-emerald-800">Resumen del Viaje</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div className="bg-white rounded-lg p-2">
+                        <p className="text-lg font-bold text-zinc-900">{optimizedRoute.length}</p>
+                        <p className="text-[9px] text-zinc-500">Paradas</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-2">
+                        <p className="text-lg font-bold text-zinc-900">{fmtDist(routeData.totalDistance)}</p>
+                        <p className="text-[9px] text-zinc-500">Distancia</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-2">
+                        <p className="text-lg font-bold text-zinc-900">{fmtTime(routeData.totalDuration)}</p>
+                        <p className="text-[9px] text-zinc-500">Tiempo</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* ═══════════ ROUTE ORDER OVERLAY ON MAP ═══════════ */}
-      {optimizedRoute.length > 0 && routeData && (panel === 'admin') && (
+      {optimizedRoute.length > 0 && routeData && panel === 'admin' && adminTab === 'ruta' && (
         <div className="absolute top-14 left-3 z-[999] bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-zinc-200 p-2.5 max-w-[220px] max-h-[50vh] overflow-y-auto">
           <p className="text-[10px] font-bold text-zinc-600 mb-1.5 flex items-center gap-1"><Clock className="h-3 w-3 text-blue-500" /> RUTA POR HORARIO READY</p>
           <div className="flex items-center gap-1.5 py-0.5 mb-1">
