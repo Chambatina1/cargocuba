@@ -195,6 +195,13 @@ export default function CargoCubaPage() {
   const [scheduledDriver, setScheduledDriver] = useState('');
   const [scheduling, setScheduling] = useState(false);
 
+  // ─── Select Mode (tap markers to measure distances) ───
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const selectLinesRef = useRef<any[]>([]);
+  const [selectRouteData, setSelectRouteData] = useState<{ totalDistance: number; totalDuration: number; legs: { duration: number; distance: number }[] } | null>(null);
+  const [calcSelectRoute, setCalcSelectRoute] = useState(false);
+
   // ═══════════════════════════════════════════════════════════════════════════
   // LOAD LEAFLET
   // ═══════════════════════════════════════════════════════════════════════════
@@ -245,6 +252,32 @@ export default function CargoCubaPage() {
   }, [drivers, followingDriver, followDriverPhone]);
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // SELECT MODE: tap markers to pick, measure distances, optimize
+  // ═══════════════════════════════════════════════════════════════════════════
+  const toggleSelectMode = useCallback(() => {
+    const next = !selectMode;
+    setSelectMode(next);
+    if (!next) { setSelectedIds([]); setSelectRouteData(null); }
+    else { setOptimizedRoute([]); setRouteData(null); setFollowingDriver(false); setFollowDriverPhone(null); }
+  }, [selectMode]);
+
+  const handleMarkerTap = useCallback((pickupId: number) => {
+    if (!selectMode) return;
+    setSelectedIds(prev => {
+      const idx = prev.indexOf(pickupId);
+      if (idx >= 0) {
+        const next = [...prev];
+        next.splice(idx, 1);
+        if (next.length === 0) setSelectRouteData(null);
+        return next;
+      } else {
+        return [...prev, pickupId];
+      }
+    });
+    setSelectRouteData(null);
+  }, [selectMode]);
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // MAP
   // ═══════════════════════════════════════════════════════════════════════════
   const initMap = useCallback(() => {
@@ -264,6 +297,7 @@ export default function CargoCubaPage() {
     markersRef.current.forEach(m => m.remove()); markersRef.current = [];
     if (routeLineRef.current) { routeLineRef.current.remove(); routeLineRef.current = null; }
     if (driverAccuracyRef.current) { driverAccuracyRef.current.remove(); driverAccuracyRef.current = null; }
+    selectLinesRef.current.forEach(l => l.remove()); selectLinesRef.current = [];
 
     // Clear preview marker if exists
     if (previewMarkerRef.current) { previewMarkerRef.current.remove(); previewMarkerRef.current = null; }
@@ -284,9 +318,42 @@ export default function CargoCubaPage() {
     baseM.bindPopup(`<div style="font-family:system-ui;min-width:160px;"><strong style="font-size:13px;">Base</strong><div style="font-size:11px;color:#666;margin-top:2px;">${BASE_NAME}</div><div style="margin-top:4px;font-size:10px;color:#dc2626;font-weight:600;">Punto de partida</div></div>`);
     bounds.push([BASE_LAT, BASE_LNG]); markersRef.current.push(baseM);
 
-    // ─── Route line ───
+    // ─── Route line (admin optimize) ───
     if (routeData && routeData.route.length > 1 && panel === 'admin') {
       routeLineRef.current = L.polyline(routeData.route, { color: RUTA, weight: 4, opacity: 0.8, dashArray: '12, 8', lineCap: 'round' }).addTo(mapInstRef.current);
+    }
+
+    // ─── SELECT MODE: lines between selected points ───
+    if (selectMode && selectedIds.length > 0) {
+      const selPts = selectedIds.map(id => pickups.find(p => p.id === id)).filter(Boolean) as Pickup[];
+      const allPts: [number, number][] = [[BASE_LAT, BASE_LNG], ...selPts.map(p => [p.lat, p.lng] as [number, number])];
+      // Draw lines
+      if (allPts.length >= 2) {
+        // OSRM route line if available
+        if (selectRouteData) {
+          const osrmPts = selectedIds.map(id => pickups.find(p => p.id === id)).filter(Boolean) as Pickup[];
+          const coords: [number, number][] = [[BASE_LAT, BASE_LNG], ...osrmPts.map(p => [p.lat, p.lng])];
+          const line = L.polyline(coords, { color: '#f59e0b', weight: 5, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }).addTo(mapInstRef.current);
+          selectLinesRef.current.push(line);
+        } else {
+          const line = L.polyline(allPts, { color: '#f59e0b', weight: 4, opacity: 0.7, dashArray: '10, 6', lineCap: 'round' }).addTo(mapInstRef.current);
+          selectLinesRef.current.push(line);
+        }
+      }
+      // Distance labels at midpoints
+      for (let i = 0; i < allPts.length - 1; i++) {
+        const midLat = (allPts[i][0] + allPts[i + 1][0]) / 2;
+        const midLng = (allPts[i][1] + allPts[i + 1][1]) / 2;
+        const dMi = haversine(allPts[i][0], allPts[i][1], allPts[i + 1][0], allPts[i + 1][1]) * 0.621371;
+        const legDist = selectRouteData?.legs[i] ? fmtDist(selectRouteData.legs[i].distance) : `${dMi.toFixed(1)} mi`;
+        const legTime = selectRouteData?.legs[i] ? ` · ${fmtTime(selectRouteData.legs[i].duration)}` : '';
+        const label = L.divIcon({
+          html: `<div style="background:#fff;padding:2px 7px;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,0.2);border:1.5px solid #f59e0b;white-space:nowrap;font-family:system-ui;font-size:10px;font-weight:700;color:#92400e;">${legDist}${legTime}</div>`,
+          className: '', iconAnchor: [40, 12],
+        });
+        const labelM = L.marker([midLat, midLng], { icon: label, interactive: false, zIndexOffset: 2500 }).addTo(mapInstRef.current);
+        selectLinesRef.current.push(labelM);
+      }
     }
 
     // ─── Pickup markers ───
@@ -294,12 +361,22 @@ export default function CargoCubaPage() {
       const isVerde = p.estado === 'esperando';
       const color = isVerde ? VERDE : MORADO;
       const showNum = optimizedRoute.length > 0 && panel === 'admin';
-      const icon = L.icon({ iconUrl: pinSVG(color, showNum ? idx + 1 : undefined, isVerde), iconSize: [36, 46], iconAnchor: [18, 46], popupAnchor: [0, -46] });
+      const selIdx = selectMode ? selectedIds.indexOf(p.id) : -1;
+      const isSelected = selIdx >= 0;
+      // In select mode, selected pins turn orange with selection number
+      const finalColor = isSelected ? '#f59e0b' : color;
+      const finalNum = isSelected ? selIdx + 1 : (showNum ? idx + 1 : undefined);
+      const icon = L.icon({ iconUrl: pinSVG(finalColor, finalNum, isVerde && !isSelected), iconSize: [36, 46], iconAnchor: [18, 46], popupAnchor: [0, -46] });
       const marker = L.marker([p.lat, p.lng], { icon }).addTo(mapInstRef.current);
-      const estadoLabel = isVerde ? 'En Espera' : 'Recogido';
-      const estadoColor = isVerde ? VERDE : MORADO;
-      const distFromBase = distMilesFromBase(p.lat, p.lng).toFixed(1);
-      marker.bindPopup(`<div style="font-family:system-ui;min-width:180px;"><strong style="font-size:13px;">${p.nombre}</strong><div style="font-size:11px;color:#666;margin-top:2px;">${p.direccion}</div><div style="margin-top:4px;font-size:11px;color:#dc2626;font-weight:600;">${distFromBase} mi de la Base</div>${p.horarioReady ? `<div style="margin-top:4px;font-size:11px;color:#2563eb;font-weight:600;">Ready: ${p.horarioReady}</div>` : ''}<div style="margin-top:6px;display:flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:${estadoColor};display:inline-block;"></span><span style="font-size:11px;font-weight:600;color:${estadoColor};">${estadoLabel}</span></div>${p.choferAsignado ? `<div style="font-size:11px;margin-top:4px;color:#555;">Chofer: ${p.choferAsignado}</div>` : ''}${p.telefono ? `<a href="tel:${p.telefono}" style="display:inline-block;margin-top:6px;font-size:12px;color:#2563eb;font-weight:600;">${p.telefono}</a>` : ''}</div>`);
+      // In select mode, tapping toggles selection instead of opening popup
+      if (selectMode) {
+        marker.on('click', () => { handleMarkerTap(p.id); });
+      } else {
+        const estadoLabel = isVerde ? 'En Espera' : 'Recogido';
+        const estadoColor = isVerde ? VERDE : MORADO;
+        const distFromBase = distMilesFromBase(p.lat, p.lng).toFixed(1);
+        marker.bindPopup(`<div style="font-family:system-ui;min-width:180px;"><strong style="font-size:13px;">${p.nombre}</strong><div style="font-size:11px;color:#666;margin-top:2px;">${p.direccion}</div><div style="margin-top:4px;font-size:11px;color:#dc2626;font-weight:600;">${distFromBase} mi de la Base</div>${p.horarioReady ? `<div style="margin-top:4px;font-size:11px;color:#2563eb;font-weight:600;">Ready: ${p.horarioReady}</div>` : ''}<div style="margin-top:6px;display:flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:${estadoColor};display:inline-block;"></span><span style="font-size:11px;font-weight:600;color:${estadoColor};">${estadoLabel}</span></div>${p.choferAsignado ? `<div style="font-size:11px;margin-top:4px;color:#555;">Chofer: ${p.choferAsignado}</div>` : ''}${p.telefono ? `<a href="tel:${p.telefono}" style="display:inline-block;margin-top:6px;font-size:12px;color:#2563eb;font-weight:600;">${p.telefono}</a>` : ''}</div>`);
+      }
       bounds.push([p.lat, p.lng]); markersRef.current.push(marker);
     });
 
@@ -344,7 +421,7 @@ export default function CargoCubaPage() {
       }
     }
     setTimeout(() => mapInstRef.current?.invalidateSize(), 150);
-  }, [pickups, drivers, optimizedRoute, routeData, panel, mapReady, followingDriver]);
+  }, [pickups, drivers, optimizedRoute, routeData, panel, mapReady, followingDriver, selectMode, selectedIds, selectRouteData, handleMarkerTap]);
 
   useEffect(() => { setTimeout(() => { initMap(); renderMarkers(); }, 200); }, [initMap, renderMarkers]);
   useEffect(() => { if (mapInstRef.current) renderMarkers(); }, [renderMarkers]);
@@ -614,6 +691,44 @@ export default function CargoCubaPage() {
   const recogidosCount = pickups.filter(p => p.estado === 'recogido').length;
   const activeDriversCount = drivers.filter(d => d.activo).length;
 
+  // ─── Select mode computed values ───
+  const selectedPickups = selectedIds.map(id => pickups.find(p => p.id === id)).filter(Boolean) as Pickup[];
+  const selectLegs = (() => {
+    if (selectedPickups.length === 0) return [];
+    const legs: { from: string; to: string; distMi: number }[] = [];
+    const allPts = [{ name: 'Base', lat: BASE_LAT, lng: BASE_LNG }, ...selectedPickups.map(p => ({ name: p.nombre, lat: p.lat, lng: p.lng }))];
+    for (let i = 0; i < allPts.length - 1; i++) {
+      const dMi = haversine(allPts[i].lat, allPts[i].lng, allPts[i + 1].lat, allPts[i + 1].lng) * 0.621371;
+      legs.push({ from: allPts[i].name, to: allPts[i + 1].name, distMi: Math.round(dMi * 10) / 10 });
+    }
+    return legs;
+  })();
+  const selectTotalDirectMi = selectLegs.reduce((s, l) => s + l.distMi, 0);
+
+  const handleCalcSelectRoute = async () => {
+    if (selectedPickups.length < 1) return;
+    setCalcSelectRoute(true);
+    try {
+      const pts = [{ lat: BASE_LAT, lng: BASE_LNG }, ...selectedPickups.map(p => ({ lat: p.lat, lng: p.lng }))];
+      const result = await calcRoute(pts);
+      setSelectRouteData({ totalDistance: result.totalDistance, totalDuration: result.totalDuration, legs: result.legs });
+    } catch (err: any) { toast.error('Error: ' + (err.message || '')); }
+    setCalcSelectRoute(false);
+  };
+
+  const handleOptimizeSelected = async () => {
+    if (selectedPickups.length < 2) { toast.error('Selecciona al menos 2 puntos'); return; }
+    const ordered = optimizeOrder(selectedPickups);
+    setSelectedIds(ordered.map(p => p.id));
+    setSelectRouteData(null);
+    try {
+      const pts = [{ lat: BASE_LAT, lng: BASE_LNG }, ...ordered.map(p => ({ lat: p.lat, lng: p.lng }))];
+      const result = await calcRoute(pts);
+      setSelectRouteData({ totalDistance: result.totalDistance, totalDuration: result.totalDuration, legs: result.legs });
+      toast.success(`Orden optimizado: ${fmtDist(result.totalDistance)}, ${fmtTime(result.totalDuration)}`);
+    } catch (err: any) { toast.error('Error ruta: ' + (err.message || '')); }
+  };
+
 
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -757,6 +872,18 @@ export default function CargoCubaPage() {
             {driverActive && <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white animate-pulse" />}
           </motion.button>
 
+          <motion.button whileTap={{ scale: 0.95 }} onClick={toggleSelectMode}
+            className={`flex flex-col items-center gap-1.5 rounded-2xl px-5 py-3.5 shadow-2xl border relative ${selectMode ? 'bg-amber-500 border-amber-600' : 'bg-white border-zinc-100 hover:shadow-3xl'} transition-all`}
+            style={{ touchAction: 'manipulation' }}>
+            <div className={`w-11 h-11 rounded-full flex items-center justify-center ${selectMode ? 'bg-white' : 'bg-amber-500'}`}>
+              <Route className={`h-5 w-5 ${selectMode ? 'text-amber-500' : 'text-white'}`} />
+            </div>
+            <span className={`text-[11px] font-bold ${selectMode ? 'text-white' : 'text-zinc-700'}`}>Medir</span>
+            {selectMode && selectedIds.length > 0 && (
+              <div className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 bg-white text-amber-600 text-[10px] font-bold rounded-full flex items-center justify-center px-1 border-2 border-amber-400">{selectedIds.length}</div>
+            )}
+          </motion.button>
+
           <motion.button whileTap={{ scale: 0.95 }} onClick={() => { setAdminTab('lista'); setPanel('admin'); }}
             className="flex flex-col items-center gap-1.5 bg-white rounded-2xl px-5 py-3.5 shadow-2xl border border-zinc-100 hover:shadow-3xl transition-shadow"
             style={{ touchAction: 'manipulation' }}>
@@ -765,6 +892,93 @@ export default function CargoCubaPage() {
           </motion.button>
         </div>
       )}
+
+      {/* ═══════════ SELECT MODE BANNER ═══════════ */}
+      <AnimatePresence>
+        {selectMode && (
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 30 }}
+            className="absolute bottom-24 left-3 right-3 z-[1002] bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-amber-200 overflow-hidden"
+          >
+            {/* Header */}
+            <div className="px-3.5 py-2.5 bg-amber-50 border-b border-amber-200 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-full bg-amber-500 flex items-center justify-center">
+                  <Route className="h-3.5 w-3.5 text-white" />
+                </div>
+                <span className="text-xs font-bold text-amber-800">
+                  {selectedIds.length === 0 ? 'Toca los marcadores para seleccionarlos' : `${selectedIds.length} punto${selectedIds.length > 1 ? 's' : ''} seleccionado${selectedIds.length > 1 ? 's' : ''} · Directa: ${selectTotalDirectMi.toFixed(1)} mi`}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {selectedIds.length >= 2 && (
+                  <>
+                    <button onClick={handleOptimizeSelected} disabled={calcSelectRoute}
+                      className="text-[9px] font-bold px-2.5 py-1.5 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 flex items-center gap-1"
+                      style={{ touchAction: 'manipulation' }}>
+                      {calcSelectRoute ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}Optimizar
+                    </button>
+                    <button onClick={handleCalcSelectRoute} disabled={calcSelectRoute}
+                      className="text-[9px] font-bold px-2.5 py-1.5 rounded-lg bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 flex items-center gap-1"
+                      style={{ touchAction: 'manipulation' }}>
+                      {calcSelectRoute ? <Loader2 className="h-3 w-3 animate-spin" /> : <Navigation className="h-3 w-3" />}Ruta Real
+                    </button>
+                  </>
+                )}
+                {selectedIds.length > 0 && (
+                  <button onClick={() => { setSelectedIds([]); setSelectRouteData(null); }}
+                    className="text-[9px] font-bold px-2 py-1.5 rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 flex items-center gap-1"
+                    style={{ touchAction: 'manipulation' }}>
+                    <RotateCcw className="h-3 w-3" />Limpiar
+                  </button>
+                )}
+                <button onClick={toggleSelectMode}
+                  className="text-[9px] font-bold px-2 py-1.5 rounded-lg bg-red-100 text-red-600 hover:bg-red-200"
+                  style={{ touchAction: 'manipulation' }}>
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            </div>
+            {/* Legs list */}
+            {selectLegs.length > 0 && (
+              <div className="max-h-[30vh] overflow-y-auto">
+                {selectLegs.map((leg, i) => (
+                  <div key={i} className="px-3.5 py-2 flex items-center gap-2.5 border-b border-zinc-50 last:border-0">
+                    <div className={`w-5 h-5 rounded-full text-[9px] font-bold flex items-center justify-center flex-shrink-0 ${i === 0 ? 'bg-red-500 text-white' : 'bg-amber-100 text-amber-700'}`}>
+                      {i === 0 ? 'B' : i}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1">
+                        <span className="text-[11px] font-semibold text-zinc-800 truncate">{leg.from}</span>
+                        <ChevronRight className="h-3 w-3 text-zinc-300 flex-shrink-0" />
+                        <span className="text-[11px] font-semibold text-zinc-800 truncate">{leg.to}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="text-[10px] font-bold text-amber-700">{leg.distMi} mi</span>
+                      {selectRouteData?.legs[i] && (
+                        <span className="text-[9px] text-zinc-400">Ruta: {fmtDist(selectRouteData.legs[i].distance)} · {fmtTime(selectRouteData.legs[i].duration)}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {/* Total */}
+                <div className="px-3.5 py-2 bg-amber-50/50 flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-zinc-500">TOTAL</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] font-bold text-amber-700">{selectTotalDirectMi.toFixed(1)} mi directa</span>
+                    {selectRouteData && (
+                      <span className="text-[10px] font-bold text-emerald-600">Ruta: {fmtDist(selectRouteData.totalDistance)} · {fmtTime(selectRouteData.totalDuration)}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ═══════════════════════════════════════════════════════════════════
           PANEL: CLIENT FORM
