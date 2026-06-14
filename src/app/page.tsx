@@ -142,7 +142,7 @@ function pinSVG(color: string, num?: number, pulse?: boolean) {
 
 export default function CargoCubaPage() {
   // ─── Overlay panels ───
-  const [panel, setPanel] = useState<'none' | 'clientForm' | 'driver' | 'adminLogin' | 'admin'>('none');
+  const [panel, setPanel] = useState<'none' | 'clientForm' | 'driver' | 'admin'>('none');
 
   // ─── Data ───
   const [pickups, setPickups] = useState<Pickup[]>([]);
@@ -188,9 +188,8 @@ export default function CargoCubaPage() {
   const [followDriverPhone, setFollowDriverPhone] = useState<string | null>(null);
 
   // ─── Admin ───
-  const [adminPassword, setAdminPassword] = useState('');
   const [adminChofer, setAdminChofer] = useState('');
-  const [adminLoggedIn, setAdminLoggedIn] = useState(false);
+  const [adminLoggedIn, setAdminLoggedIn] = useState(true);
   const [adminTab, setAdminTab] = useState<'lista' | 'distancias' | 'ruta'>('lista');
   const [distMatrix, setDistMatrix] = useState<{ from: string; to: string; distMi: number }[]>([]);
   const [calculatingDist, setCalculatingDist] = useState(false);
@@ -359,7 +358,7 @@ export default function CargoCubaPage() {
 
     const activeDrivers = drivers.filter(d => d.activo);
     if (activeDrivers.length === 0) {
-      toast.error('No hay choferes activos en el mapa');
+      toast.error('No hay choferes activos. El chofer debe ir a "Soy Chofer" y activar GPS primero.');
       return;
     }
 
@@ -616,17 +615,7 @@ export default function CargoCubaPage() {
   const recogidosCount = pickups.filter(p => p.estado === 'recogido').length;
   const activeDriversCount = drivers.filter(d => d.activo).length;
 
-  // ─── Admin login handler ───
-  const doAdminLogin = () => {
-    if (adminPassword === 'chambatina2024') {
-      setAdminLoggedIn(true);
-      setAdminTab('lista');
-      setPanel('admin');
-      toast.success('Admin activo');
-    } else {
-      toast.error('Clave incorrecta');
-    }
-  };
+
 
   // ═══════════════════════════════════════════════════════════════════════════
   // RENDER
@@ -766,7 +755,7 @@ export default function CargoCubaPage() {
             {driverActive && <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white animate-pulse" />}
           </motion.button>
 
-          <motion.button whileTap={{ scale: 0.95 }} onClick={() => setPanel('adminLogin')}
+          <motion.button whileTap={{ scale: 0.95 }} onClick={() => { setAdminLoggedIn(true); setAdminTab('lista'); setPanel('admin'); }}
             className="flex flex-col items-center gap-1.5 bg-white rounded-2xl px-5 py-3.5 shadow-2xl border border-zinc-100 hover:shadow-3xl transition-shadow"
             style={{ touchAction: 'manipulation' }}>
             <div className="w-11 h-11 rounded-full bg-purple-500 flex items-center justify-center"><Shield className="h-5 w-5 text-white" /></div>
@@ -950,32 +939,6 @@ export default function CargoCubaPage() {
         )}
       </AnimatePresence>
 
-      {/* ═══════════════════════════════════════════════════════════════════
-          PANEL: ADMIN LOGIN
-          ═══════════════════════════════════════════════════════════════════ */}
-      <AnimatePresence>
-        {panel === 'adminLogin' && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="absolute inset-0 z-[1001] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
-            onClick={() => setPanel('none')}>
-            <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }}
-              onClick={e => e.stopPropagation()}
-              className="bg-white rounded-2xl p-6 w-full max-w-xs shadow-2xl">
-              <div className="text-center mb-5">
-                <div className="w-14 h-14 rounded-2xl bg-purple-100 flex items-center justify-center mx-auto mb-3"><Shield className="w-7 h-7 text-purple-600" /></div>
-                <h3 className="font-bold text-lg text-zinc-900">Admin</h3>
-                <p className="text-xs text-zinc-500">CargoCuba</p>
-              </div>
-              <input type="password" autoFocus placeholder="Clave" value={adminPassword} onChange={e => setAdminPassword(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') doAdminLogin(); }}
-                className="w-full h-11 px-4 rounded-xl border border-zinc-200 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-purple-300 bg-zinc-50" />
-              <button onClick={doAdminLogin}
-                className="w-full h-11 rounded-xl bg-purple-600 text-white font-bold text-sm hover:bg-purple-700 shadow-lg" style={{ touchAction: 'manipulation' }}>Entrar</button>
-              <button onClick={() => setPanel('none')} className="w-full mt-3 text-center text-xs text-zinc-400">Cancelar</button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* ═══════════════════════════════════════════════════════════════════
           PANEL: ADMIN
