@@ -20,13 +20,22 @@ async function ensureDriverTable() {
         "lat" DOUBLE PRECISION NOT NULL,
         "lng" DOUBLE PRECISION NOT NULL,
         "activo" BOOLEAN NOT NULL DEFAULT true,
+        "mensaje" TEXT DEFAULT 'Voy a salir para Chambatina',
+        "precioServicio" TEXT,
+        "direccionRecojo" TEXT,
+        "comunidad" TEXT,
         "updatedAt" TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
       CREATE INDEX IF NOT EXISTS "DriverLocation_phone_idx" ON "DriverLocation"("phone");
       CREATE INDEX IF NOT EXISTS "DriverLocation_activo_idx" ON "DriverLocation"("activo");
     `);
+    // Add new columns if they don't exist (for existing deployments)
+    try { await prisma.$executeRawUnsafe(`ALTER TABLE "DriverLocation" ADD COLUMN IF NOT EXISTS "mensaje" TEXT DEFAULT 'Voy a salir para Chambatina';`); } catch {}
+    try { await prisma.$executeRawUnsafe(`ALTER TABLE "DriverLocation" ADD COLUMN IF NOT EXISTS "precioServicio" TEXT;`); } catch {}
+    try { await prisma.$executeRawUnsafe(`ALTER TABLE "DriverLocation" ADD COLUMN IF NOT EXISTS "direccionRecojo" TEXT;`); } catch {}
+    try { await prisma.$executeRawUnsafe(`ALTER TABLE "DriverLocation" ADD COLUMN IF NOT EXISTS "comunidad" TEXT;`); } catch {}
     driverTableReady = true;
-    console.log('[Drivers] Table created');
+    console.log('[Drivers] Table created/updated');
   }
 }
 
@@ -44,20 +53,33 @@ export async function GET() {
   }
 }
 
-// POST — register or update driver location (chofer sends GPS)
+// POST — register or update driver location (chofer sends GPS + instructions)
 export async function POST(req: NextRequest) {
   try {
     await ensureDriverTable();
-    const { phone, nombre, lat, lng, activo } = await req.json();
+    const { phone, nombre, lat, lng, activo, mensaje, precioServicio, direccionRecojo, comunidad } = await req.json();
 
     if (!phone || !nombre || lat == null || lng == null) {
       return NextResponse.json({ ok: false, error: 'Phone, nombre, lat y lng son requeridos' }, { status: 400 });
     }
 
+    const updateData: any = { nombre, lat, lng, activo: activo !== undefined ? activo : true };
+    if (mensaje !== undefined) updateData.mensaje = mensaje;
+    if (precioServicio !== undefined) updateData.precioServicio = precioServicio;
+    if (direccionRecojo !== undefined) updateData.direccionRecojo = direccionRecojo;
+    if (comunidad !== undefined) updateData.comunidad = comunidad;
+
     const driver = await prisma.driverLocation.upsert({
       where: { phone },
-      update: { nombre, lat, lng, activo: activo !== undefined ? activo : true },
-      create: { phone, nombre, lat, lng, activo: activo !== undefined ? activo : true },
+      update: updateData,
+      create: {
+        phone, nombre, lat, lng,
+        activo: activo !== undefined ? activo : true,
+        mensaje: mensaje || 'Voy a salir para Chambatina',
+        precioServicio: precioServicio || null,
+        direccionRecojo: direccionRecojo || null,
+        comunidad: comunidad || null,
+      },
     });
 
     return NextResponse.json({ ok: true, data: driver });
@@ -70,13 +92,17 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   try {
     await ensureDriverTable();
-    const { phone, activo, lat, lng } = await req.json();
+    const { phone, activo, lat, lng, mensaje, precioServicio, direccionRecojo, comunidad } = await req.json();
     if (!phone) return NextResponse.json({ ok: false, error: 'Phone requerido' }, { status: 400 });
 
     const updateData: any = {};
     if (activo !== undefined) updateData.activo = activo;
     if (lat != null) updateData.lat = lat;
     if (lng != null) updateData.lng = lng;
+    if (mensaje !== undefined) updateData.mensaje = mensaje;
+    if (precioServicio !== undefined) updateData.precioServicio = precioServicio;
+    if (direccionRecojo !== undefined) updateData.direccionRecojo = direccionRecojo;
+    if (comunidad !== undefined) updateData.comunidad = comunidad;
 
     const driver = await prisma.driverLocation.update({
       where: { phone },

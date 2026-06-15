@@ -1,7 +1,14 @@
 User-agent: Googlebot
 Allow: /
+Crawl-delay: 0
 
 User-agent: Bingbot
+Allow: /
+
+User-agent: Slurp
+Allow: /
+
+User-agent: DuckDuckBot
 Allow: /
 
 User-agent: Twitterbot
@@ -12,3 +19,7 @@ Allow: /
 
 User-agent: *
 Allow: /
+
+Sitemap: https://cargocuba.onrender.com/sitemap.xml
+
+# Chambatina - Logistica y Servicios para la Comunidad Cubana

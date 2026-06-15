@@ -24,6 +24,7 @@ interface GeoSuggestion {
 
 interface Driver {
   phone: string; nombre: string; lat: number; lng: number; activo: boolean; updatedAt: string;
+  mensaje?: string | null; precioServicio?: string | null; direccionRecojo?: string | null; comunidad?: string | null;
 }
 
 // ─── Base / Depot ──────────────────────────────────────────────────────────
@@ -181,6 +182,10 @@ export default function CargoCubaPage() {
   const [driverName, setDriverName] = useState('');
   const [driverActive, setDriverActive] = useState(false);
   const [driverMyLocation, setDriverMyLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [driverMensaje, setDriverMensaje] = useState('Voy a salir para Chambatina');
+  const [driverPrecio, setDriverPrecio] = useState('');
+  const [driverDirRecojo, setDriverDirRecojo] = useState('');
+  const [driverComunidad, setDriverComunidad] = useState('');
   const watchIdRef = useRef<number | null>(null);
 
   // ─── Follow Driver Mode ───
@@ -382,35 +387,39 @@ export default function CargoCubaPage() {
       bounds.push([p.lat, p.lng]); markersRef.current.push(marker);
     });
 
-    // ─── DRIVER markers (blue truck with pulse + accuracy circle) ───
+    // ─── DRIVER markers (community driver with blinking instructions) ───
     drivers.filter(d => d.activo).forEach(d => {
-      // Accuracy circle around driver
+      const hasInst = d.mensaje || d.direccionRecojo || d.precioServicio;
+      const mc = hasInst ? '#f97316' : CHOFER_COLOR;
+      const mcr = hasInst ? '249,115,22' : '37,99,235';
+      const isz = hasInst ? 90 : 60;
+      const csz = hasInst ? 50 : 36;
+      const esz = hasInst ? '22px' : '16px';
+
       const accuracyCircle = L.circle([d.lat, d.lng], {
-        radius: 30,
-        color: CHOFER_COLOR,
-        fillColor: CHOFER_COLOR,
-        fillOpacity: 0.08,
-        weight: 2,
-        opacity: 0.3,
+        radius: hasInst ? 50 : 30, color: mc, fillColor: mc, fillOpacity: 0.06, weight: 2, opacity: 0.3,
       }).addTo(mapInstRef.current);
       markersRef.current.push(accuracyCircle);
 
-      // Pulsing outer ring
+      let msgBubble = '';
+      if (hasInst) {
+        const bt = (d.mensaje || '') + (d.precioServicio ? ` | $${d.precioServicio}` : '');
+        msgBubble = `<div style="position:absolute;bottom:100%;left:50%;transform:translateX(-50%);margin-bottom:8px;white-space:nowrap;z-index:10;"><div style="background:rgba(${mcr},0.95);color:#fff;padding:4px 12px;border-radius:10px;font-size:11px;font-weight:800;box-shadow:0 3px 12px rgba(0,0,0,0.25);letter-spacing:0.3px;animation:msgBlink 2s ease-in-out infinite;font-family:system-ui;">${bt}</div><div style="width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:7px solid rgba(${mcr},0.95);margin:0 auto;"></div></div>`;
+      }
+
       const pulseIcon = L.divIcon({
-        html: `<div style="position:relative;width:60px;height:60px;display:flex;align-items:center;justify-content:center;">
-          <div style="position:absolute;width:60px;height:60px;border-radius:50%;background:rgba(37,99,235,0.15);animation:driverPulse 2s ease-out infinite;"></div>
-          <div style="position:absolute;width:44px;height:44px;border-radius:50%;background:rgba(37,99,235,0.25);animation:driverPulse 2s ease-out infinite 0.5s;"></div>
-          <div style="width:36px;height:36px;background:${CHOFER_COLOR};border:3px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 12px rgba(37,99,235,0.6);z-index:2;position:relative;">
-            <span style="font-size:16px;">🚛</span>
-          </div>
-          <div style="position:absolute;top:0;right:2px;width:12px;height:12px;background:#22c55e;border:2px solid #fff;border-radius:50%;z-index:3;animation:liveDot 1.5s ease-in-out infinite;"></div>
-        </div>
-        <style>@keyframes driverPulse{0%{transform:scale(0.5);opacity:1}100%{transform:scale(1.3);opacity:0}}@keyframes liveDot{0%,100%{opacity:1}50%{opacity:0.3}}</style>`,
-        className: '', iconSize: [60, 60], iconAnchor: [30, 30],
+        html: `<div style="position:relative;width:${isz}px;height:${isz}px;display:flex;align-items:center;justify-content:center;"><div style="position:absolute;width:${isz}px;height:${isz}px;border-radius:50%;background:rgba(${mcr},0.12);animation:driverPulse 1.5s ease-out infinite;"></div><div style="position:absolute;width:${Math.round(isz*0.78)}px;height:${Math.round(isz*0.78)}px;border-radius:50%;background:rgba(${mcr},0.22);animation:driverPulse 1.5s ease-out infinite 0.4s;"></div><div style="width:${csz}px;height:${csz}px;background:${mc};border:3px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 16px rgba(${mcr},0.7);z-index:2;position:relative;"><span style="font-size:${esz};">🚛</span></div><div style="position:absolute;top:2px;right:4px;width:14px;height:14px;background:#22c55e;border:2px solid #fff;border-radius:50%;z-index:3;animation:liveDot 1s ease-in-out infinite;"></div>${msgBubble}</div><style>@keyframes driverPulse{0%{transform:scale(0.5);opacity:1}100%{transform:scale(1.4);opacity:0}}@keyframes liveDot{0%,100%{opacity:1}50%{opacity:0.2}}@keyframes msgBlink{0%,100%{opacity:1;transform:translateX(-50%) scale(1)}50%{opacity:0.85;transform:translateX(-50%) scale(1.03)}}</style>`,
+        className: '', iconSize: [isz, isz + (hasInst ? 50 : 0)], iconAnchor: [isz / 2, isz / 2],
       });
       const dM = L.marker([d.lat, d.lng], { icon: pulseIcon, zIndexOffset: 3000 }).addTo(mapInstRef.current);
       const distFromBase = distMilesFromBase(d.lat, d.lng).toFixed(1);
-      dM.bindPopup(`<div style="font-family:system-ui;min-width:200px;"><strong style="font-size:13px;">${d.nombre}</strong><div style="font-size:11px;color:${CHOFER_COLOR};font-weight:600;margin-top:2px;">Chofer EN VIVO</div><div style="font-size:11px;color:#666;margin-top:2px;">${d.phone}</div><div style="margin-top:4px;font-size:11px;color:#dc2626;font-weight:600;">${distFromBase} mi de la Base</div><div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;"><a href="https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lng}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:8px;background:#4285f4;color:#fff;font-size:11px;font-weight:600;text-decoration:none;">Google Maps</a><a href="tel:${d.phone}" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:8px;background:#2563eb;color:#fff;font-size:11px;font-weight:600;text-decoration:none;">${d.phone}</a></div></div>`);
+
+      let instHtml = '';
+      if (hasInst) {
+        instHtml = `<div style="margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff7ed,#ffedd5);border-radius:12px;border:1.5px solid #fdba74;">${d.mensaje ? `<div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:6px;"><span style="font-size:14px;">💬</span><div><div style="font-size:9px;color:#92400e;font-weight:600;text-transform:uppercase;">Mensaje</div><div style="font-size:12px;color:#1c1917;font-weight:700;">${d.mensaje}</div></div></div>` : ''}${d.direccionRecojo ? `<div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:6px;"><span style="font-size:14px;">📍</span><div><div style="font-size:9px;color:#92400e;font-weight:600;text-transform:uppercase;">Recogo en</div><div style="font-size:12px;color:#1c1917;font-weight:700;">${d.direccionRecojo}</div></div></div>` : ''}${d.precioServicio ? `<div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:6px;"><span style="font-size:14px;">💰</span><div><div style="font-size:9px;color:#92400e;font-weight:600;text-transform:uppercase;">Cobro por servicio</div><div style="font-size:14px;color:#ea580c;font-weight:800;">$${d.precioServicio}</div></div></div>` : ''}${d.comunidad ? `<div style="display:flex;align-items:flex-start;gap:6px;"><span style="font-size:14px;">🏘️</span><div><div style="font-size:9px;color:#92400e;font-weight:600;text-transform:uppercase;">Comunidad</div><div style="font-size:12px;color:#1c1917;font-weight:700;">${d.comunidad}</div></div></div>` : ''}</div>`;
+      }
+
+      dM.bindPopup(`<div style="font-family:system-ui;min-width:240px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><div style="width:36px;height:36px;background:${mc};border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><span style="font-size:18px;">🚛</span></div><div><strong style="font-size:14px;color:#111;">${d.nombre}</strong><div style="font-size:10px;color:${mc};font-weight:700;display:flex;align-items:center;gap:4px;"><span style="width:6px;height:6px;border-radius:50%;background:#22c55e;display:inline-block;"></span>EN VIVO${hasInst ? ' · MODO COMUNITARIO' : ''}</div></div></div><div style="font-size:11px;color:#666;">${d.phone} · ${distFromBase} mi de la Base</div>${instHtml}<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;"><a href="https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lng}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border-radius:8px;background:#4285f4;color:#fff;font-size:11px;font-weight:600;text-decoration:none;">Google Maps</a><a href="tel:${d.phone}" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border-radius:8px;background:${mc};color:#fff;font-size:11px;font-weight:600;text-decoration:none;">Llamar</a></div></div>`);
       bounds.push([d.lat, d.lng]); markersRef.current.push(dM);
     });
 
@@ -545,6 +554,13 @@ export default function CargoCubaPage() {
     if (!driverPhone.trim() || !driverName.trim()) { toast.error('Pon tu telefono y nombre'); return; }
     if (!navigator.geolocation) { toast.error('GPS no disponible'); return; }
 
+    const driverPayload = {
+      phone: driverPhone.trim(), nombre: driverName.trim(), lat: 0, lng: 0, activo: true,
+      mensaje: driverMensaje.trim() || 'Voy a salir para Chambatina',
+      precioServicio: driverPrecio.trim() || null,
+      direccionRecojo: driverDirRecojo.trim() || null,
+      comunidad: driverComunidad.trim() || null,
+    };
     navigator.geolocation.getCurrentPosition(async (pos) => {
       const { latitude: lat, longitude: lng } = pos.coords;
       setDriverMyLocation({ lat, lng });
@@ -552,9 +568,9 @@ export default function CargoCubaPage() {
       try {
         await fetch('/api/drivers', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone: driverPhone.trim(), nombre: driverName.trim(), lat, lng, activo: true }),
+          body: JSON.stringify({ ...driverPayload, lat, lng }),
         });
-        toast.success('Estas EN VIVO en el mapa. Todos te ven.');
+        toast.success('Estas EN VIVO. Todos ven tus instrucciones en el mapa.');
         load();
       } catch { toast.error('Error al activar GPS'); }
     }, () => toast.error('No se pudo obtener ubicacion'), { enableHighAccuracy: true, timeout: 10000 });
@@ -566,7 +582,7 @@ export default function CargoCubaPage() {
       try {
         await fetch('/api/drivers', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone: driverPhone.trim(), nombre: driverName.trim(), lat, lng, activo: true }),
+          body: JSON.stringify({ ...driverPayload, lat, lng }),
         });
       } catch {}
     }, () => {}, { enableHighAccuracy: true, timeout: 15000, maximumAge: 2000 });
@@ -862,10 +878,10 @@ export default function CargoCubaPage() {
           </motion.button>
 
           <motion.button whileTap={{ scale: 0.92 }} onClick={() => setPanel('driver')}
-            className="flex flex-col items-center gap-1 bg-white rounded-2xl px-3 py-2.5 shadow-2xl border border-zinc-100 relative"
+            className="flex flex-col items-center gap-1 bg-white rounded-2xl px-3 py-2.5 shadow-2xl border border-orange-200 relative"
             style={{ touchAction: 'manipulation' }}>
-            <div className="w-9 h-9 rounded-full bg-blue-500 flex items-center justify-center"><Truck className="h-4 w-4 text-white" /></div>
-            <span className="text-[9px] font-bold text-zinc-700 leading-tight">Chofer</span>
+            <div className="w-9 h-9 rounded-full bg-orange-500 flex items-center justify-center shadow-lg shadow-orange-200"><Truck className="h-4 w-4 text-white" /></div>
+            <span className="text-[9px] font-bold text-orange-700 leading-tight">Chofer</span>
             {driverActive && <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white animate-pulse" />}
           </motion.button>
 
@@ -1084,23 +1100,55 @@ export default function CargoCubaPage() {
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {/* Driver info form */}
               <div className="space-y-2.5">
-                <input value={driverPhone} onChange={e => setDriverPhone(e.target.value)} placeholder="Tu telefono *" className="w-full h-10 px-3 rounded-lg border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white" />
-                <input value={driverName} onChange={e => setDriverName(e.target.value)} placeholder="Tu nombre *" className="w-full h-10 px-3 rounded-lg border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white" />
+                <input value={driverPhone} onChange={e => setDriverPhone(e.target.value)} placeholder="Tu telefono *" className="w-full h-10 px-3 rounded-lg border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 bg-white" />
+                <input value={driverName} onChange={e => setDriverName(e.target.value)} placeholder="Tu nombre *" className="w-full h-10 px-3 rounded-lg border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 bg-white" />
+
+                {/* ─── INSTRUCCIONES PARA EL MAPA ─── */}
+                <div className="bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200 rounded-xl p-3 space-y-2.5">
+                  <p className="text-[11px] font-bold text-orange-800 flex items-center gap-1.5">
+                    <span className="w-5 h-5 rounded-full bg-orange-500 text-white text-[10px] flex items-center justify-center font-bold">i</span>
+                    Instrucciones que veran todos en el mapa
+                  </p>
+                  <input value={driverMensaje} onChange={e => setDriverMensaje(e.target.value)} placeholder="Ej: Voy a salir para Chambatina" className="w-full h-10 px-3 rounded-lg border border-orange-200 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 bg-white font-semibold" />
+                  <input value={driverDirRecojo} onChange={e => setDriverDirRecojo(e.target.value)} placeholder="Direccion donde recoges (ej: 1234 Palm St)" className="w-full h-10 px-3 rounded-lg border border-orange-200 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 bg-white" />
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-orange-500">$</span>
+                      <input value={driverPrecio} onChange={e => setDriverPrecio(e.target.value)} placeholder="5" className="w-full h-10 pl-7 pr-3 rounded-lg border border-orange-200 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 bg-white font-bold" />
+                    </div>
+                    <span className="text-[10px] text-zinc-500 leading-tight flex items-center px-1">Precio<br/>servicio</span>
+                  </div>
+                  <input value={driverComunidad} onChange={e => setDriverComunidad(e.target.value)} placeholder="Tu comunidad (ej: Pinar del Rio, Hialeah)" className="w-full h-10 px-3 rounded-lg border border-orange-200 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 bg-white" />
+                </div>
 
                 {!driverActive ? (
                   <button onClick={startDriverTracking} disabled={!driverPhone.trim() || !driverName.trim()}
-                    className="w-full h-11 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 disabled:opacity-40 transition-all flex items-center justify-center gap-2 shadow-lg"
+                    className="w-full h-12 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 text-white font-bold text-sm hover:from-orange-600 hover:to-amber-600 disabled:opacity-40 transition-all flex items-center justify-center gap-2 shadow-lg shadow-orange-200"
                     style={{ touchAction: 'manipulation' }}>
-                    <Navigation className="h-4 w-4" /> Activar GPS — Aparecer en el Mapa
+                    <Navigation className="h-5 w-5" /> Activar GPS — Aparecer en el Mapa
                   </button>
                 ) : (
                   <button onClick={stopDriverTracking}
-                    className="w-full h-11 rounded-xl bg-red-500 text-white font-bold text-sm hover:bg-red-600 transition-all flex items-center justify-center gap-2"
+                    className="w-full h-12 rounded-xl bg-red-500 text-white font-bold text-sm hover:bg-red-600 transition-all flex items-center justify-center gap-2 shadow-lg shadow-red-200"
                     style={{ touchAction: 'manipulation' }}>
-                    <X className="h-4 w-4" /> Desconectar del Mapa
+                    <X className="h-5 w-5" /> Desconectar del Mapa
                   </button>
                 )}
               </div>
+
+              {/* Active driver instructions summary */}
+              {driverActive && (
+                <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 space-y-1.5">
+                  <p className="text-[11px] font-bold text-orange-800 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                    Tu info visible en el mapa ahora:
+                  </p>
+                  {driverMensaje && <p className="text-xs text-zinc-700"><span className="font-bold text-orange-600">Mensaje:</span> {driverMensaje}</p>}
+                  {driverDirRecojo && <p className="text-xs text-zinc-700"><span className="font-bold text-orange-600">Recogo en:</span> {driverDirRecojo}</p>}
+                  {driverPrecio && <p className="text-xs text-zinc-700"><span className="font-bold text-orange-600">Cobro:</span> ${driverPrecio}</p>}
+                  {driverComunidad && <p className="text-xs text-zinc-700"><span className="font-bold text-orange-600">Comunidad:</span> {driverComunidad}</p>}
+                </div>
+              )}
 
               {driverMyLocation && (
                 <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-700">

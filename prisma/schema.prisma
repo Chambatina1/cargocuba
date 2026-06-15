@@ -45,13 +45,17 @@ model PickupRequest {
 // =============================================
 
 model DriverLocation {
-  id        Int      @id @default(autoincrement())
-  phone     String   @unique
-  nombre    String
-  lat       Float
-  lng       Float
-  activo    Boolean  @default(true)
-  updatedAt DateTime @updatedAt
+  id             Int      @id @default(autoincrement())
+  phone          String   @unique
+  nombre         String
+  lat            Float
+  lng            Float
+  activo         Boolean  @default(true)
+  mensaje        String?  @default("Voy a salir para Chambatina")
+  precioServicio String?
+  direccionRecojo String?
+  comunidad      String?
+  updatedAt      DateTime @updatedAt
 
   @@index([phone])
   @@index([activo])
