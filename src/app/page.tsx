@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import {
   ShoppingCart, MapPin, Route, Trash2, Check, X, Phone,
-  Truck, Loader2, ChevronRight, Zap, RotateCcw, Users, Shield,
+  Truck, Loader2, ChevronRight, Zap, RotateCcw, Users,
   Navigation, Crosshair, ArrowLeft, Radar, Map, Clock, Search
 } from 'lucide-react';
 
@@ -155,6 +155,7 @@ export default function CargoCubaPage() {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
+  const mapFittedOnce = useRef(false);
   const routeLineRef = useRef<any>(null);
   const driverAccuracyRef = useRef<any>(null);
   const LRef = useRef<any>(null);
@@ -291,6 +292,8 @@ export default function CargoCubaPage() {
     if (!mapInstRef.current) {
       mapInstRef.current = L.map(mapRef.current, { center: [BASE_LAT, BASE_LNG], zoom: 11, zoomControl: true });
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '', maxZoom: 19 }).addTo(mapInstRef.current);
+      // Once user manually pans or zooms, stop auto-fitting
+      mapInstRef.current.on('dragstart zoomstart', () => { mapFittedOnce.current = true; });
     }
   }, [mapReady]);
 
@@ -423,13 +426,14 @@ export default function CargoCubaPage() {
       bounds.push([d.lat, d.lng]); markersRef.current.push(dM);
     });
 
-    // Only auto-fit if NOT following a driver
-    if (!followingDriver) {
+    // Only auto-fit on first load (before user interacts)
+    if (!followingDriver && !mapFittedOnce.current) {
       if (bounds.length > 1) {
         mapInstRef.current.fitBounds(bounds, { padding: [60, 60], maxZoom: 13 });
       } else {
         mapInstRef.current.setView([BASE_LAT, BASE_LNG], 12);
       }
+      mapFittedOnce.current = true;
     }
     setTimeout(() => mapInstRef.current?.invalidateSize(), 150);
   }, [pickups, drivers, optimizedRoute, routeData, panel, mapReady, followingDriver, selectMode, selectedIds, selectRouteData, handleMarkerTap]);
@@ -897,12 +901,6 @@ export default function CargoCubaPage() {
             )}
           </motion.button>
 
-          <motion.button whileTap={{ scale: 0.92 }} onClick={() => { setAdminTab('lista'); setPanel('admin'); }}
-            className="flex flex-col items-center gap-1 bg-white rounded-2xl px-3 py-2.5 shadow-2xl border border-zinc-100"
-            style={{ touchAction: 'manipulation' }}>
-            <div className="w-9 h-9 rounded-full bg-purple-500 flex items-center justify-center"><Shield className="h-4 w-4 text-white" /></div>
-            <span className="text-[9px] font-bold text-zinc-700 leading-tight">Admin</span>
-          </motion.button>
         </div>
       )}
 
