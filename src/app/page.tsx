@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import {
   ShoppingCart, MapPin, Route, Trash2, Check, X, Phone,
   Truck, Loader2, ChevronRight, Zap, RotateCcw, Users, Shield,
-  Navigation, Crosshair, ArrowLeft, Radar, Map, Clock, Search
+  Navigation, Crosshair, ArrowLeft, Radar, MapIcon, Clock, Search
 } from 'lucide-react';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -1022,7 +1022,7 @@ export default function CargoCubaPage() {
             onClick={() => { setPanel('none'); setOptimizedRoute([]); setRouteData(null); setFollowingDriver(false); setFollowDriverPhone(null); }}
             className="absolute bottom-4 left-4 z-[1003] flex items-center gap-2 bg-blue-600 text-white px-4 py-3 rounded-2xl shadow-2xl font-bold text-xs"
             style={{ touchAction: 'manipulation' }}>
-            <Map className="h-4 w-4" />
+            <MapIcon className="h-4 w-4" />
             Ver Mapa
           </motion.button>
         )}
