@@ -152,6 +152,25 @@ function pinSVG(color: string, num?: number, pulse?: boolean) {
   return `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="36" height="46" viewBox="0 0 36 46"><path d="M18 0C8.06 0 0 8.06 0 18c0 13.5 18 28 18 28s18-14.5 18-28C36 8.06 27.94 0 18 0z" fill="${color}" stroke="#fff" stroke-width="2"/>${pulseHtml}${numHtml}</svg>`)}`;
 }
 
+// ─── Extract coords from Google Maps link ────────────────────────────────
+function extractGoogleMapsCoords(text: string): { lat: number; lng: number } | null {
+  try {
+    let m = text.match(/@(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)/);
+    if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+    m = text.match(/!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/);
+    if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+    m = text.match(/\/@(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)/);
+    if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+    m = text.match(/query=(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)/);
+    if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+    m = text.match(/ll=(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)/);
+    if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+    m = text.match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
+    if (m && parseFloat(m[1]) >= -90 && parseFloat(m[1]) <= 90) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+  } catch {}
+  return null;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // MAIN PAGE
 // ═══════════════════════════════════════════════════════════════════════════
@@ -535,12 +554,31 @@ export default function CargoCubaPage() {
   const handleSearchAddress = useCallback((q: string) => {
     setSearchQuery(q);
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    if (q.length < 3) { setSuggestions([]); setShowSuggestions(false); return; }
+    if (q.length < 2) { setSuggestions([]); setShowSuggestions(false); return; }
     setSearching(true); setShowSuggestions(true);
     searchTimerRef.current = setTimeout(async () => {
+      // First try Google Maps coords extraction
+      const coords = extractGoogleMapsCoords(q);
+      if (coords) {
+        const dir = await reverseGeocode(coords.lat, coords.lng);
+        const short = dir ? dir.split(',').slice(0, 3).join(',') : `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`;
+        setForm(f => ({ ...f, lat: coords.lat, lng: coords.lng, direccion: short }));
+        setSearchQuery(short);
+        if (previewMarkerRef.current) { previewMarkerRef.current.remove(); previewMarkerRef.current = null; }
+        if (mapInstRef.current && LRef.current) {
+          const L = LRef.current;
+          const icon = L.icon({ iconUrl: pinSVG('#dc2626'), iconSize: [36, 46], iconAnchor: [18, 46], popupAnchor: [0, -46] });
+          previewMarkerRef.current = L.marker([coords.lat, coords.lng], { icon, zIndexOffset: 5000 }).addTo(mapInstRef.current);
+          mapInstRef.current.setView([coords.lat, coords.lng], 16, { animate: true });
+        }
+        setSuggestions([]); setSearching(false); setShowSuggestions(false);
+        toast.success('Coordenadas de Google Maps detectadas');
+        return;
+      }
       const results = await forwardGeocode(q);
       setSuggestions(results); setSearching(false);
-    }, 400);
+      if (results.length === 0) toast.info('Sin resultados. Intenta pegar un enlace de Google Maps.');
+    }, 300);
   }, []);
 
   const selectSuggestion = useCallback((s: GeoSuggestion) => {
@@ -1273,15 +1311,16 @@ export default function CargoCubaPage() {
                 {locating ? 'Obteniendo GPS...' : form.lat !== 0 ? `Ubicacion lista (${distMilesFromBase(form.lat, form.lng).toFixed(1)} mi de la Base)` : 'Busca tu direccion o usa GPS'}
               </div>
 
-              {/* Address search input with autocomplete */}
-              <div className="relative">
+              {/* ── Opcion 1: Pegar enlace de Google Maps ── */}
+              <div>
+                <p className="text-[10px] text-zinc-500 font-semibold mb-1">Pega un enlace de Google Maps o escribe direccion:</p>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
                   <input
                     value={searchQuery}
                     onChange={e => handleSearchAddress(e.target.value)}
                     onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
-                    placeholder="Escribe tu direccion (ej: 123 Main St, Orlando)"
+                    placeholder="Ej: 123 Main St, Orlando O pega link de Google Maps"
                     className="w-full h-11 pl-10 pr-10 rounded-xl border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 bg-zinc-50"
                   />
                   {searching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 animate-spin" />}
@@ -1289,7 +1328,6 @@ export default function CargoCubaPage() {
                     <button onClick={() => { setSearchQuery(''); setSuggestions([]); setShowSuggestions(false); }} className="absolute right-3 top-1/2 -translate-y-1/2"><X className="h-4 w-4 text-zinc-400 hover:text-zinc-600" /></button>
                   )}
                 </div>
-                {/* Suggestions dropdown */}
                 {showSuggestions && suggestions.length > 0 && (
                   <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-zinc-200 rounded-xl shadow-xl z-20 max-h-48 overflow-y-auto">
                     {suggestions.map((s, i) => (
@@ -1303,7 +1341,7 @@ export default function CargoCubaPage() {
                 )}
               </div>
 
-              {/* GPS fallback button */}
+              {/* ── Opcion 2: GPS ── */}
               <button onClick={getLocation} disabled={locating}
                 className="w-full h-10 rounded-xl border border-dashed border-zinc-300 text-xs font-semibold text-zinc-500 hover:bg-zinc-50 hover:border-zinc-400 flex items-center justify-center gap-2 disabled:opacity-50 transition-all"
                 style={{ touchAction: 'manipulation' }}>
@@ -1311,8 +1349,8 @@ export default function CargoCubaPage() {
                 {locating ? 'Obteniendo GPS...' : 'O usar mi ubicacion GPS'}
               </button>
 
-              {/* Hidden direccion (auto-filled from search) */}
-              <input value={form.direccion} onChange={e => setForm(f => ({ ...f, direccion: e.target.value }))} placeholder="Direccion (auto o edita manualmente)" className="w-full h-11 px-4 rounded-xl border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 bg-zinc-50" />
+              {/* Direccion editable (se llena automaticamente) */}
+              <input value={form.direccion} onChange={e => setForm(f => ({ ...f, direccion: e.target.value }))} placeholder="Direccion (se llena automatica o edita manualmente)" className="w-full h-11 px-4 rounded-xl border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 bg-zinc-50" />
 
               <input value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} placeholder="Tu nombre *" className="w-full h-11 px-4 rounded-xl border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 bg-zinc-50" />
               <input value={form.telefono} onChange={e => setForm(f => ({ ...f, telefono: e.target.value }))} placeholder="Telefono" className="w-full h-11 px-4 rounded-xl border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 bg-zinc-50" />
@@ -1379,54 +1417,88 @@ export default function CargoCubaPage() {
                 </div>
 
                 {/* ─── PUNTO DE PARTIDA (SEDE) ─── */}
-                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-3 space-y-2.5">
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-3 space-y-3">
                   <p className="text-[11px] font-bold text-blue-800 flex items-center gap-1.5">
                     <MapPin className="h-4 w-4 text-blue-600" />
                     Tu Punto de Partida (Sede)
                   </p>
-                  <p className="text-[10px] text-blue-600">Donde comienzas tu ruta. Si no lo pones, se usa la Base.</p>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-blue-400" />
-                    <input
-                      value={ppSearchQuery}
-                      onChange={e => handlePPSearch(e.target.value)}
-                      onFocus={() => { if (ppSuggestions.length > 0) setPpShowSugg(true); }}
-                      placeholder="Busca tu sede (ej: 456 Pine St, Orlando)"
-                      className="w-full h-10 pl-9 pr-9 rounded-lg border border-blue-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"
-                    />
-                    {ppSearching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-blue-400 animate-spin" />}
-                    {!ppSearching && ppSearchQuery && (
-                      <button onClick={() => { setPpSearchQuery(''); setPpSuggestions([]); setPpShowSugg(false); setDriverPPLat(null); setDriverPPLng(null); setDriverPPDir(''); }} className="absolute right-3 top-1/2 -translate-y-1/2"><X className="h-3.5 w-3.5 text-blue-400" /></button>
-                    )}
-                    {ppShowSugg && ppSuggestions.length > 0 && (
-                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-200 rounded-xl shadow-xl z-20 max-h-40 overflow-y-auto">
-                        {ppSuggestions.map((s, i) => (
-                          <button key={i} onClick={() => selectPPSuggestion(s)}
-                            className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-zinc-50 last:border-0 flex items-start gap-2" style={{ touchAction: 'manipulation' }}>
-                            <MapPin className="h-3.5 w-3.5 text-blue-500 mt-0.5 flex-shrink-0" />
-                            <span className="text-[11px] text-zinc-700 leading-relaxed">{s.display_name.split(',').slice(0, 3).join(',')}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
+
+                  {/* 1. TOCAR EL MAPA — metodo principal */}
+                  <button onClick={startPpTapMode} className={`w-full h-12 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md ${ppTapMode ? 'bg-orange-500 text-white animate-pulse shadow-orange-300' : 'bg-gradient-to-r from-emerald-500 to-green-500 text-white hover:from-emerald-600 hover:to-green-600 shadow-green-200'}`} style={{ touchAction: 'manipulation' }}>
+                    {ppTapMode ? <><MapPin className="h-5 w-5 animate-bounce" /> Toca el mapa ahora...</> : <><MapPin className="h-5 w-5" /> Tocar el Mapa</>}
+                  </button>
+
+                  {/* 2. PEGAR ENLACE DE GOOGLE MAPS */}
+                  <div>
+                    <p className="text-[9px] text-blue-500 font-semibold mb-1">O pega un enlace de Google Maps:</p>
+                    <div className="flex gap-1.5">
+                      <input
+                        value={ppSearchQuery}
+                        onChange={e => {
+                          setPpSearchQuery(e.target.value);
+                          // Auto-detectar enlace de Google Maps al pegar
+                          const v = e.target.value;
+                          const coords = extractGoogleMapsCoords(v);
+                          if (coords) {
+                            setDriverPPLat(coords.lat); setDriverPPLng(coords.lng);
+                            toast.success('Coordenadas extraidas del enlace de Google Maps');
+                          }
+                        }}
+                        placeholder="Pega enlace de Google Maps aqui..."
+                        className="flex-1 h-10 px-3 rounded-lg border border-blue-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"
+                      />
+                      <button onClick={async () => {
+                        const v = ppSearchQuery.trim();
+                        if (!v) return;
+                        // Intentar extraer coordenadas de Google Maps
+                        const coords = extractGoogleMapsCoords(v);
+                        if (coords) {
+                          setDriverPPLat(coords.lat); setDriverPPLng(coords.lng);
+                          if (mapInstRef.current && LRef.current) {
+                            if (ppPreviewRef.current) { ppPreviewRef.current.remove(); ppPreviewRef.current = null; }
+                            const L = LRef.current;
+                            const icon = L.icon({ iconUrl: pinSVG('#ea580c'), iconSize: [36, 46], iconAnchor: [18, 46], popupAnchor: [0, -46] });
+                            ppPreviewRef.current = L.marker([coords.lat, coords.lng], { icon, zIndexOffset: 5000 }).addTo(mapInstRef.current);
+                            mapInstRef.current.setView([coords.lat, coords.lng], 15, { animate: true });
+                          }
+                          const dir = await reverseGeocode(coords.lat, coords.lng);
+                          const short = dir ? dir.split(',').slice(0, 3).join(',') : 'Punto de Google Maps';
+                          setDriverPPDir(short); setPpSearchQuery(short);
+                          toast.success('Punto de partida puesto desde Google Maps');
+                        } else {
+                          // Si no es enlace, buscar con Nominatim
+                          const results = await forwardGeocode(v);
+                          if (results.length > 0) {
+                            selectPPSuggestion(results[0]);
+                          } else {
+                            toast.error('No se encontro. Intenta: abre Google Maps, busca tu direccion, copia el enlace y pegalo aqui.');
+                          }
+                        }
+                      }}
+                      className="h-10 px-3 rounded-lg bg-blue-500 text-white text-xs font-bold hover:bg-blue-600 flex-shrink-0" style={{ touchAction: 'manipulation' }}>
+                        <Search className="h-4 w-4" />
+                      </button>
+                    </div>
                   </div>
+
+                  {/* 3. GPS ACTUAL */}
                   <button onClick={setPPFromGPS} className="w-full h-9 rounded-lg border border-dashed border-blue-300 text-[10px] font-semibold text-blue-600 hover:bg-blue-50 flex items-center justify-center gap-1.5">
-                    <Crosshair className="h-3.5 w-3.5" /> Usar mi GPS actual como punto de partida
+                    <Crosshair className="h-3.5 w-3.5" /> O usar mi GPS actual
                   </button>
-                  <button onClick={startPpTapMode} className={`w-full h-9 rounded-lg border border-dashed font-semibold text-[10px] flex items-center justify-center gap-1.5 transition-all ${ppTapMode ? 'bg-orange-100 border-orange-400 text-orange-700 animate-pulse' : 'border-green-300 text-green-600 hover:bg-green-50'}`}>
-                    <MapPin className="h-3.5 w-3.5" /> {ppTapMode ? 'Toca el mapa ahora...' : 'Tocar el mapa para poner punto de partida'}
-                  </button>
+
+                  {/* Punto seleccionado + Guardar */}
                   {driverPPLat && driverPPLng && (
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-blue-100">
                         <Check className="h-4 w-4 text-green-600 flex-shrink-0" />
                         <div className="flex-1 min-w-0">
-                          <p className="text-[10px] font-bold text-green-700">Punto de partida seleccionado</p>
+                          <p className="text-[10px] font-bold text-green-700">Punto seleccionado</p>
                           <p className="text-[9px] text-zinc-500 truncate">{driverPPDir || `${driverPPLat.toFixed(4)}, ${driverPPLng.toFixed(4)}`}</p>
                         </div>
+                        <button onClick={() => { setDriverPPLat(null); setDriverPPLng(null); setDriverPPDir(''); setPpSearchQuery(''); if (ppPreviewRef.current) { ppPreviewRef.current.remove(); ppPreviewRef.current = null; } }} className="text-zinc-400 hover:text-red-500"><X className="h-3.5 w-3.5" /></button>
                       </div>
                       <button onClick={savePuntoPartida} disabled={ppSaving || !driverPhone.trim()}
-                        className="w-full h-10 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold text-xs hover:from-blue-600 hover:to-indigo-600 disabled:opacity-40 transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-200"
+                        className="w-full h-11 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold text-sm hover:from-blue-600 hover:to-indigo-600 disabled:opacity-40 transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-200"
                         style={{ touchAction: 'manipulation' }}>
                         {ppSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                         {ppSaving ? 'Guardando...' : 'Guardar Punto de Partida'}
