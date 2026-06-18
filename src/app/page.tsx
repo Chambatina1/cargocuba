@@ -115,24 +115,42 @@ function optimizeOrder(pickups: Pickup[], startLat = BASE_LAT, startLng = BASE_L
   return ordered;
 }
 
-// ─── Forward Geocode (Nominatim) ────────────────────────────────────────
-async function forwardGeocode(query: string): Promise<GeoSuggestion[]> {
+// ─── Forward Geocode (Nominatim) with multi-strategy fallback ─────────
+async function nominatimSearch(query: string, opts?: { viewbox?: string; bounded?: number }): Promise<GeoSuggestion[]> {
   try {
-    const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=8&accept-language=es`, {
-      headers: { 'User-Agent': 'CargoCuba-App/1.0' }
-    });
+    let url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=8&accept-language=es`;
+    if (opts?.viewbox) url += `&viewbox=${opts.viewbox}&bounded=${opts.bounded ?? 0}`;
+    const r = await fetch(url, { headers: { 'User-Agent': 'CargoCuba-App/1.0' } });
     const j = await r.json();
-    let results = (j || []).slice(0, 8);
-    // Si no hay resultados, intentar con viewbox centrado en Florida/Cuba
-    if (results.length === 0) {
-      const r2 = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=5&viewbox=-87,24,-79,31&bounded=0&accept-language=es`, {
-        headers: { 'User-Agent': 'CargoCuba-App/1.0' }
-      });
-      const j2 = await r2.json();
-      results = (j2 || []).slice(0, 5);
-    }
-    return results;
+    return (j || []).slice(0, 8);
   } catch { return []; }
+}
+
+async function forwardGeocode(query: string): Promise<GeoSuggestion[]> {
+  // Strategy 1: Direct search
+  let results = await nominatimSearch(query);
+  if (results.length > 0) return results;
+
+  // Strategy 2: Append "Florida, USA"
+  results = await nominatimSearch(`${query}, Florida, USA`);
+  if (results.length > 0) return results;
+
+  // Strategy 3: Append "Cuba"
+  results = await nominatimSearch(`${query}, Cuba`);
+  if (results.length > 0) return results;
+
+  // Strategy 4: Viewbox Florida/Cuba
+  results = await nominatimSearch(query, { viewbox: '-87,24,-79,31', bounded: 0 });
+  if (results.length > 0) return results;
+
+  // Strategy 5: Append "Miami, FL"
+  results = await nominatimSearch(`${query}, Miami, FL`);
+  if (results.length > 0) return results;
+
+  // Strategy 6: Append "Havana, Cuba"
+  results = await nominatimSearch(`${query}, Havana, Cuba`);
+
+  return results;
 }
 
 // ─── Reverse Geocode ───────────────────────────────────────────────────────
@@ -555,6 +573,22 @@ export default function CargoCubaPage() {
   // ═══════════════════════════════════════════════════════════════════════════
   // CLIENT: ADDRESS SEARCH + GPS + SUBMIT
   // ═══════════════════════════════════════════════════════════════════════════
+  const selectSuggestion = useCallback((s: GeoSuggestion) => {
+    const lat = parseFloat(s.lat), lng = parseFloat(s.lon);
+    const shortAddr = s.display_name.split(',').slice(0, 3).join(',');
+    setForm(f => ({ ...f, lat, lng, direccion: shortAddr }));
+    setSearchQuery(shortAddr); setShowSuggestions(false); setSuggestions([]);
+    // Place RED preview pin on map
+    if (previewMarkerRef.current) { previewMarkerRef.current.remove(); previewMarkerRef.current = null; }
+    if (mapInstRef.current && LRef.current) {
+      const L = LRef.current;
+      const icon = L.icon({ iconUrl: pinSVG('#dc2626'), iconSize: [36, 46], iconAnchor: [18, 46], popupAnchor: [0, -46] });
+      previewMarkerRef.current = L.marker([lat, lng], { icon, zIndexOffset: 5000 }).addTo(mapInstRef.current);
+      previewMarkerRef.current.bindPopup(`<div style="font-family:system-ui;"><strong style="font-size:12px;">Tu direccion</strong><div style="font-size:10px;color:#dc2626;font-weight:600;">Punto rojo = se hara VERDE al enviar</div></div>`).openPopup();
+      mapInstRef.current.setView([lat, lng], 16, { animate: true });
+    }
+  }, []);
+
   const handleSearchAddress = useCallback((q: string) => {
     setSearchQuery(q);
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
@@ -573,33 +607,63 @@ export default function CargoCubaPage() {
           const L = LRef.current;
           const icon = L.icon({ iconUrl: pinSVG('#dc2626'), iconSize: [36, 46], iconAnchor: [18, 46], popupAnchor: [0, -46] });
           previewMarkerRef.current = L.marker([coords.lat, coords.lng], { icon, zIndexOffset: 5000 }).addTo(mapInstRef.current);
+          previewMarkerRef.current.bindPopup(`<div style="font-family:system-ui;"><strong style="font-size:12px;">Tu direccion</strong><div style="font-size:10px;color:#dc2626;font-weight:600;">Punto rojo = se hara VERDE al enviar</div></div>`).openPopup();
           mapInstRef.current.setView([coords.lat, coords.lng], 16, { animate: true });
         }
         setSuggestions([]); setSearching(false); setShowSuggestions(false);
-        toast.success('Coordenadas de Google Maps detectadas');
+        toast.success('Direccion encontrada y marcada en el mapa');
         return;
       }
       const results = await forwardGeocode(q);
       setSuggestions(results); setSearching(false);
-      if (results.length === 0) toast.info('Sin resultados. Intenta pegar un enlace de Google Maps.');
+      // Auto-select first result if only 1 found
+      if (results.length === 1) {
+        selectSuggestion(results[0]);
+      }
+      if (results.length === 0) toast.info('Sin resultados. Prueba con: calle + ciudad, o pega enlace de Google Maps.');
     }, 300);
-  }, []);
+  }, [selectSuggestion]);
 
-  const selectSuggestion = useCallback((s: GeoSuggestion) => {
-    const lat = parseFloat(s.lat), lng = parseFloat(s.lon);
-    const shortAddr = s.display_name.split(',').slice(0, 3).join(',');
-    setForm(f => ({ ...f, lat, lng, direccion: shortAddr }));
-    setSearchQuery(shortAddr); setShowSuggestions(false); setSuggestions([]);
-    // Place RED preview pin on map
-    if (previewMarkerRef.current) { previewMarkerRef.current.remove(); previewMarkerRef.current = null; }
-    if (mapInstRef.current && LRef.current) {
-      const L = LRef.current;
-      const icon = L.icon({ iconUrl: pinSVG('#dc2626'), iconSize: [36, 46], iconAnchor: [18, 46], popupAnchor: [0, -46] });
-      previewMarkerRef.current = L.marker([lat, lng], { icon, zIndexOffset: 5000 }).addTo(mapInstRef.current);
-      previewMarkerRef.current.bindPopup(`<div style="font-family:system-ui;"><strong style="font-size:12px;">Vista Previa</strong><div style="font-size:10px;color:#dc2626;font-weight:600;">Punto rojo = se hara VERDE al enviar</div></div>`);
-      mapInstRef.current.setView([lat, lng], 16, { animate: true });
+  // Explicit search on button press / Enter key
+  const handleClientSearchNow = useCallback(async () => {
+    const q = searchQuery.trim();
+    if (!q) return;
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    setSearching(true); setShowSuggestions(false); setSuggestions([]);
+    // First: check Google Maps link
+    const coords = extractGoogleMapsCoords(q);
+    if (coords) {
+      const dir = await reverseGeocode(coords.lat, coords.lng);
+      const short = dir ? dir.split(',').slice(0, 3).join(',') : `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`;
+      setForm(f => ({ ...f, lat: coords.lat, lng: coords.lng, direccion: short }));
+      setSearchQuery(short);
+      if (previewMarkerRef.current) { previewMarkerRef.current.remove(); previewMarkerRef.current = null; }
+      if (mapInstRef.current && LRef.current) {
+        const L = LRef.current;
+        const icon = L.icon({ iconUrl: pinSVG('#dc2626'), iconSize: [36, 46], iconAnchor: [18, 46], popupAnchor: [0, -46] });
+        previewMarkerRef.current = L.marker([coords.lat, coords.lng], { icon, zIndexOffset: 5000 }).addTo(mapInstRef.current);
+        previewMarkerRef.current.bindPopup(`<div style="font-family:system-ui;"><strong style="font-size:12px;">Tu direccion</strong><div style="font-size:10px;color:#dc2626;font-weight:600;">Punto rojo = se hara VERDE al enviar</div></div>`).openPopup();
+        mapInstRef.current.setView([coords.lat, coords.lng], 16, { animate: true });
+      }
+      setSearching(false);
+      toast.success('Direccion de Google Maps ubicada en el mapa');
+      return;
     }
-  }, []);
+    // Search via Nominatim with fallbacks
+    const results = await forwardGeocode(q);
+    setSearching(false);
+    if (results.length > 0) {
+      // Auto-select the first result and put it on the map
+      selectSuggestion(results[0]);
+      if (results.length > 1) {
+        // Show remaining suggestions too
+        setSuggestions(results); setShowSuggestions(true);
+      }
+      toast.success('Direccion ubicada en el mapa');
+    } else {
+      toast.error('No encontrada. Abre Google Maps > busca > comparte > copia enlace > pega aqui.');
+    }
+  }, [searchQuery, selectSuggestion]);
 
   const getLocation = useCallback(() => {
     setLocating(true);
@@ -672,7 +736,7 @@ export default function CargoCubaPage() {
       const L = LRef.current;
       const icon = L.icon({ iconUrl: pinSVG('#ea580c'), iconSize: [36, 46], iconAnchor: [18, 46], popupAnchor: [0, -46] });
       ppPreviewRef.current = L.marker([lat, lng], { icon, zIndexOffset: 5000 }).addTo(mapInstRef.current);
-      ppPreviewRef.current.bindPopup('<div style="font-family:system-ui;"><strong style="font-size:12px;">Punto de Partida</strong><div style="font-size:10px;color:#ea580c;font-weight:600;">Sede de este chofer</div></div>');
+      ppPreviewRef.current.bindPopup('<div style="font-family:system-ui;"><strong style="font-size:12px;">Punto de Partida</strong><div style="font-size:10px;color:#ea580c;font-weight:600;">Sede de este chofer</div></div>').openPopup();
       mapInstRef.current.setView([lat, lng], 15, { animate: true });
     }
   }, []);
@@ -1403,23 +1467,31 @@ export default function CargoCubaPage() {
 
               {/* ── 1. DIRECCION EDITABLE (campo principal) ── */}
               <div>
-                <p className="text-[10px] text-zinc-500 font-semibold mb-1">Escribe tu direccion o pega un enlace de Google Maps:</p>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
-                  <input
-                    value={searchQuery}
-                    onChange={e => handleSearchAddress(e.target.value)}
-                    onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
-                    placeholder="123 Main St, Orlando  o  https://maps.google.com/..."
-                    className="w-full h-12 pl-10 pr-10 rounded-xl border-2 border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:border-emerald-400 bg-zinc-50 font-medium"
-                  />
-                  {searching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-500 animate-spin" />}
-                  {!searching && searchQuery && (
-                    <button onClick={() => { setSearchQuery(''); setSuggestions([]); setShowSuggestions(false); setForm(f => ({ ...f, lat: 0, lng: 0 })); if (previewMarkerRef.current) { previewMarkerRef.current.remove(); previewMarkerRef.current = null; } }} className="absolute right-3 top-1/2 -translate-y-1/2"><X className="h-4 w-4 text-zinc-400 hover:text-red-500" /></button>
-                  )}
+                <p className="text-[10px] text-zinc-500 font-semibold mb-1">Escribe tu direccion o pega enlace de Google Maps:</p>
+                <div className="flex gap-1.5">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+                    <input
+                      value={searchQuery}
+                      onChange={e => handleSearchAddress(e.target.value)}
+                      onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleClientSearchNow(); } }}
+                      placeholder="123 Main St, Orlando  o  https://maps.google.com/..."
+                      className="w-full h-12 pl-10 pr-10 rounded-xl border-2 border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:border-emerald-400 bg-zinc-50 font-medium"
+                    />
+                    {searching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-500 animate-spin" />}
+                    {!searching && searchQuery && (
+                      <button onClick={() => { setSearchQuery(''); setSuggestions([]); setShowSuggestions(false); setForm(f => ({ ...f, lat: 0, lng: 0 })); if (previewMarkerRef.current) { previewMarkerRef.current.remove(); previewMarkerRef.current = null; } }} className="absolute right-3 top-1/2 -translate-y-1/2"><X className="h-4 w-4 text-zinc-400 hover:text-red-500" /></button>
+                    )}
+                  </div>
+                  <button onClick={handleClientSearchNow} disabled={searching || !searchQuery.trim()}
+                    className="h-12 px-4 rounded-xl bg-emerald-500 text-white font-bold text-xs hover:bg-emerald-600 disabled:opacity-40 flex-shrink-0 flex items-center justify-center gap-1.5 shadow-md" style={{ touchAction: 'manipulation' }}>
+                    {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                    Buscar
+                  </button>
                 </div>
                 {showSuggestions && suggestions.length > 0 && (
-                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-zinc-200 rounded-xl shadow-xl z-20 max-h-48 overflow-y-auto">
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-zinc-200 rounded-xl shadow-xl z-[1100] max-h-48 overflow-y-auto">
                     {suggestions.map((s, i) => (
                       <button key={i} onClick={() => selectSuggestion(s)}
                         className="w-full text-left px-4 py-2.5 hover:bg-emerald-50 border-b border-zinc-50 last:border-0 flex items-start gap-2" style={{ touchAction: 'manipulation' }}>
@@ -1429,7 +1501,7 @@ export default function CargoCubaPage() {
                     ))}
                   </div>
                 )}
-                <p className="text-[9px] text-zinc-400 mt-1">Tip: Abre Google Maps, busca la direccion, comparte, copia enlace, pega aqui</p>
+                <p className="text-[9px] text-zinc-400 mt-1">Tip: Escribe y pulsa BUSCAR, o pega un enlace de Google Maps</p>
               </div>
 
               {/* Direccion guardada (se llena auto, editable) */}
@@ -1535,12 +1607,14 @@ export default function CargoCubaPage() {
                             toast.success('Coordenadas extraidas del enlace');
                           }
                         }}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('pp-search-btn')?.click(); } }}
                         placeholder="456 Pine St, Orlando  o  https://maps.google.com/..."
                         className="flex-1 h-11 px-3 rounded-lg border-2 border-blue-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400 bg-white font-medium"
                       />
-                      <button onClick={async () => {
+                      <button id="pp-search-btn" onClick={async () => {
                         const v = ppSearchQuery.trim();
                         if (!v) return;
+                        setPpSearching(true);
                         const coords = extractGoogleMapsCoords(v);
                         if (coords) {
                           setDriverPPLat(coords.lat); setDriverPPLng(coords.lng);
@@ -1549,23 +1623,27 @@ export default function CargoCubaPage() {
                             const L = LRef.current;
                             const icon = L.icon({ iconUrl: pinSVG('#ea580c'), iconSize: [36, 46], iconAnchor: [18, 46], popupAnchor: [0, -46] });
                             ppPreviewRef.current = L.marker([coords.lat, coords.lng], { icon, zIndexOffset: 5000 }).addTo(mapInstRef.current);
+                            ppPreviewRef.current.bindPopup('<div style="font-family:system-ui;"><strong style="font-size:12px;">Punto de Partida</strong><div style="font-size:10px;color:#ea580c;font-weight:600;">Sede de este chofer</div></div>').openPopup();
                             mapInstRef.current.setView([coords.lat, coords.lng], 15, { animate: true });
                           }
                           const dir = await reverseGeocode(coords.lat, coords.lng);
                           const short = dir ? dir.split(',').slice(0, 3).join(',') : 'Punto de Google Maps';
                           setDriverPPDir(short); setPpSearchQuery(short);
-                          toast.success('Punto de partida puesto');
+                          setPpSearching(false);
+                          toast.success('Punto de partida ubicado en el mapa');
                         } else {
                           const results = await forwardGeocode(v);
-                          if (results.length > 0) { selectPPSuggestion(results[0]); }
-                          else { toast.error('No encontrado. Abre Google Maps > comparte > copia enlace > pega aqui.'); }
+                          setPpSearching(false);
+                          if (results.length > 0) { selectPPSuggestion(results[0]); toast.success('Punto de partida ubicado en el mapa'); }
+                          else { toast.error('No encontrada. Escribe: calle + ciudad, o pega enlace de Google Maps.'); }
                         }
                       }}
-                      className="h-11 px-4 rounded-lg bg-blue-500 text-white text-xs font-bold hover:bg-blue-600 flex-shrink-0" style={{ touchAction: 'manipulation' }}>
-                        <Search className="h-4 w-4" />
+                      className="h-11 px-4 rounded-lg bg-blue-500 text-white text-xs font-bold hover:bg-blue-600 disabled:opacity-40 flex-shrink-0 flex items-center justify-center gap-1.5" style={{ touchAction: 'manipulation' }}>
+                        {ppSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                        Buscar
                       </button>
                     </div>
-                    <p className="text-[9px] text-blue-400 mt-1">Google Maps, busca direccion, comparte, copia enlace, pega aqui</p>
+                    <p className="text-[9px] text-blue-400 mt-1">Escribe y pulsa BUSCAR, o pega un enlace de Google Maps</p>
                   </div>
 
                   {/* 2. OPCIONES PEQUEÑAS: GPS + Tocar Mapa */}
