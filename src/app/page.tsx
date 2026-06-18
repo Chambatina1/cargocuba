@@ -118,10 +118,20 @@ function optimizeOrder(pickups: Pickup[], startLat = BASE_LAT, startLng = BASE_L
 // ─── Forward Geocode (Nominatim) ────────────────────────────────────────
 async function forwardGeocode(query: string): Promise<GeoSuggestion[]> {
   try {
-    const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=5&countrycodes=us&accept-language=es`, {
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=8&accept-language=es`, {
       headers: { 'User-Agent': 'CargoCuba-App/1.0' }
     });
-    const j = await r.json(); return (j || []).slice(0, 5);
+    const j = await r.json();
+    let results = (j || []).slice(0, 8);
+    // Si no hay resultados, intentar con viewbox centrado en Florida/Cuba
+    if (results.length === 0) {
+      const r2 = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=5&viewbox=-87,24,-79,31&bounded=0&accept-language=es`, {
+        headers: { 'User-Agent': 'CargoCuba-App/1.0' }
+      });
+      const j2 = await r2.json();
+      results = (j2 || []).slice(0, 5);
+    }
+    return results;
   } catch { return []; }
 }
 
@@ -199,6 +209,9 @@ export default function CargoCubaPage() {
   const [ppSuggestions, setPpSuggestions] = useState<GeoSuggestion[]>([]);
   const [ppSearching, setPpSearching] = useState(false);
   const [ppShowSugg, setPpShowSugg] = useState(false);
+  const [ppTapMode, setPpTapMode] = useState(false);
+  const [ppSaving, setPpSaving] = useState(false);
+  const ppTapModeRef = useRef(false);
   const ppTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ppPreviewRef = useRef<any>(null);
   const watchIdRef = useRef<number | null>(null);
@@ -597,12 +610,13 @@ export default function CargoCubaPage() {
   const handlePPSearch = useCallback((q: string) => {
     setPpSearchQuery(q);
     if (ppTimerRef.current) clearTimeout(ppTimerRef.current);
-    if (q.length < 3) { setPpSuggestions([]); setPpShowSugg(false); return; }
+    if (q.length < 2) { setPpSuggestions([]); setPpShowSugg(false); return; }
     setPpSearching(true); setPpShowSugg(true);
     ppTimerRef.current = setTimeout(async () => {
       const results = await forwardGeocode(q);
       setPpSuggestions(results); setPpSearching(false);
-    }, 400);
+      if (results.length === 0) toast.info('Sin resultados. Intenta: nombre de calle + ciudad, o usa el boton GPS.');
+    }, 300);
   }, []);
 
   const selectPPSuggestion = useCallback((s: GeoSuggestion) => {
@@ -636,6 +650,73 @@ export default function CargoCubaPage() {
       { enableHighAccuracy: true, timeout: 15000 }
     );
   }, []);
+
+  // ─── Punto de Partida: Tap on Map ───
+  const startPpTapMode = useCallback(() => {
+    if (!mapInstRef.current) { toast.error('El mapa no esta listo'); return; }
+    ppTapModeRef.current = true;
+    setPpTapMode(true);
+    toast.info('Toca un punto en el mapa para poner tu sede');
+  }, []);
+
+  const handleMapClickPP = useCallback(async (lat: number, lng: number) => {
+    if (!ppTapModeRef.current) return;
+    ppTapModeRef.current = false; setPpTapMode(false);
+    setDriverPPLat(lat); setDriverPPLng(lng);
+    // Mostrar preview
+    if (ppPreviewRef.current) { ppPreviewRef.current.remove(); ppPreviewRef.current = null; }
+    if (mapInstRef.current && LRef.current) {
+      const L = LRef.current;
+      const icon = L.icon({ iconUrl: pinSVG('#ea580c'), iconSize: [36, 46], iconAnchor: [18, 46], popupAnchor: [0, -46] });
+      ppPreviewRef.current = L.marker([lat, lng], { icon, zIndexOffset: 5000 }).addTo(mapInstRef.current);
+      ppPreviewRef.current.bindPopup('<div style="font-family:system-ui;"><strong style="font-size:12px;">Punto de Partida</strong><div style="font-size:10px;color:#ea580c;font-weight:600;">Sede de este chofer</div></div>').openPopup();
+    }
+    // Reverse geocode
+    toast.info('Obteniendo direccion...');
+    const dir = await reverseGeocode(lat, lng);
+    const short = dir ? dir.split(',').slice(0, 3).join(',') : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    setDriverPPDir(short); setPpSearchQuery(short);
+    toast.success('Punto de partida puesto en el mapa');
+  }, [ppTapModeRef]);
+
+  // ─── Connect map click to PP tap handler (separate effect to avoid circular deps) ───
+  useEffect(() => {
+    ppTapModeRef.current = ppTapMode;
+  }, [ppTapMode]);
+
+  useEffect(() => {
+    if (!mapInstRef.current) return;
+    const handler = (e: any) => handleMapClickPP(e.latlng.lat, e.latlng.lng);
+    mapInstRef.current.on('click', handler);
+    return () => { mapInstRef.current?.off('click', handler); };
+  }, [mapInstRef.current, handleMapClickPP]);
+
+  // ─── Guardar Punto de Partida independientemente ───
+  const savePuntoPartida = useCallback(async () => {
+    if (!driverPhone.trim()) { toast.error('Pon tu telefono primero'); return; }
+    if (!driverPPLat || !driverPPLng) { toast.error('Selecciona un punto de partida primero (busca, GPS o toca el mapa)'); return; }
+    setPpSaving(true);
+    try {
+      const res = await fetch('/api/drivers', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: driverPhone.trim(),
+          puntoPartidaLat: driverPPLat,
+          puntoPartidaLng: driverPPLng,
+          puntoPartidaDir: driverPPDir.trim() || null,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        toast.success('Punto de partida guardado correctamente');
+        load();
+      } else {
+        toast.error(data.error || 'Error al guardar');
+      }
+    } catch { toast.error('Error de conexion'); }
+    setPpSaving(false);
+  }, [driverPhone, driverPPLat, driverPPLng, driverPPDir]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // DRIVER: GPS TRACKING
@@ -919,6 +1000,20 @@ export default function CargoCubaPage() {
       {/* ═══════════ FULLSCREEN MAP (ALWAYS VISIBLE) ═══════════ */}
       <div ref={mapRef} className="absolute inset-0 z-0" />
       {!mapReady && <div className="absolute inset-0 z-[1] bg-zinc-100 flex items-center justify-center"><Loader2 className="h-8 w-8 text-emerald-500 animate-spin" /></div>}
+
+      {/* ═══ BANNER: Toca el mapa para punto de partida ═══ */}
+      <AnimatePresence>
+        {ppTapMode && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
+            className="absolute top-14 left-1/2 -translate-x-1/2 z-[1005] bg-orange-500 text-white px-5 py-2.5 rounded-2xl shadow-2xl font-bold text-xs flex items-center gap-2"
+          >
+            <MapPin className="h-4 w-4 animate-bounce" />
+            Toca el mapa donde esta tu sede
+            <button onClick={() => setPpTapMode(false)} className="ml-2 bg-white/20 rounded-full p-0.5"><X className="h-3 w-3" /></button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ═══════════ TOP BAR (over map, always visible) ═══════════ */}
       <div className="absolute top-0 left-0 right-0 z-[1000] pointer-events-none">
@@ -1317,13 +1412,24 @@ export default function CargoCubaPage() {
                   <button onClick={setPPFromGPS} className="w-full h-9 rounded-lg border border-dashed border-blue-300 text-[10px] font-semibold text-blue-600 hover:bg-blue-50 flex items-center justify-center gap-1.5">
                     <Crosshair className="h-3.5 w-3.5" /> Usar mi GPS actual como punto de partida
                   </button>
+                  <button onClick={startPpTapMode} className={`w-full h-9 rounded-lg border border-dashed font-semibold text-[10px] flex items-center justify-center gap-1.5 transition-all ${ppTapMode ? 'bg-orange-100 border-orange-400 text-orange-700 animate-pulse' : 'border-green-300 text-green-600 hover:bg-green-50'}`}>
+                    <MapPin className="h-3.5 w-3.5" /> {ppTapMode ? 'Toca el mapa ahora...' : 'Tocar el mapa para poner punto de partida'}
+                  </button>
                   {driverPPLat && driverPPLng && (
-                    <div className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-blue-100">
-                      <Check className="h-4 w-4 text-green-600" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[10px] font-bold text-green-700">Punto de partida configurado</p>
-                        <p className="text-[9px] text-zinc-500 truncate">{driverPPDir || `${driverPPLat.toFixed(4)}, ${driverPPLng.toFixed(4)}`}</p>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-blue-100">
+                        <Check className="h-4 w-4 text-green-600 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[10px] font-bold text-green-700">Punto de partida seleccionado</p>
+                          <p className="text-[9px] text-zinc-500 truncate">{driverPPDir || `${driverPPLat.toFixed(4)}, ${driverPPLng.toFixed(4)}`}</p>
+                        </div>
                       </div>
+                      <button onClick={savePuntoPartida} disabled={ppSaving || !driverPhone.trim()}
+                        className="w-full h-10 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold text-xs hover:from-blue-600 hover:to-indigo-600 disabled:opacity-40 transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-200"
+                        style={{ touchAction: 'manipulation' }}>
+                        {ppSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                        {ppSaving ? 'Guardando...' : 'Guardar Punto de Partida'}
+                      </button>
                     </div>
                   )}
                 </div>
