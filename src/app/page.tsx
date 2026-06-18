@@ -259,6 +259,10 @@ export default function CargoCubaPage() {
   const [selectRouteData, setSelectRouteData] = useState<{ totalDistance: number; totalDuration: number; legs: { duration: number; distance: number }[] } | null>(null);
   const [calcSelectRoute, setCalcSelectRoute] = useState(false);
 
+  // ─── Client Tap Mode (tap map to place pickup) ───
+  const [clientTapMode, setClientTapMode] = useState(false);
+  const clientTapModeRef = useRef(false);
+
   // ═══════════════════════════════════════════════════════════════════════════
   // LOAD LEAFLET
   // ═══════════════════════════════════════════════════════════════════════════
@@ -719,17 +723,48 @@ export default function CargoCubaPage() {
     toast.success('Punto de partida puesto en el mapa');
   }, [ppTapModeRef]);
 
-  // ─── Connect map click to PP tap handler (separate effect to avoid circular deps) ───
+  // ─── Client Tap: handle map click for pickup location ───
+  const handleMapClickClient = useCallback(async (lat: number, lng: number) => {
+    if (!clientTapModeRef.current) return;
+    clientTapModeRef.current = false; setClientTapMode(false);
+    setForm(f => ({ ...f, lat, lng }));
+    // Mostrar preview rojo
+    if (previewMarkerRef.current) { previewMarkerRef.current.remove(); previewMarkerRef.current = null; }
+    if (mapInstRef.current && LRef.current) {
+      const L = LRef.current;
+      const icon = L.icon({ iconUrl: pinSVG('#dc2626'), iconSize: [36, 46], iconAnchor: [18, 46], popupAnchor: [0, -46] });
+      previewMarkerRef.current = L.marker([lat, lng], { icon, zIndexOffset: 5000 }).addTo(mapInstRef.current);
+      previewMarkerRef.current.bindPopup('<div style="font-family:system-ui;"><strong style="font-size:12px;">Tu recogida</strong><div style="font-size:10px;color:#dc2626;font-weight:600;">Punto rojo = se hara VERDE al enviar</div></div>').openPopup();
+    }
+    // Reverse geocode
+    toast.info('Obteniendo direccion...');
+    const dir = await reverseGeocode(lat, lng);
+    const short = dir ? dir.split(',').slice(0, 3).join(',') : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    setForm(f => ({ ...f, direccion: short }));
+    setSearchQuery(short);
+    toast.success('Direccion marcada. Ahora llena nombre y envia.');
+    // Reabrir panel de pedidos
+    setTimeout(() => setPanel('clientForm'), 300);
+  }, []);
+
+  // ─── Connect map click handlers (PP + Client) ───
   useEffect(() => {
     ppTapModeRef.current = ppTapMode;
   }, [ppTapMode]);
 
   useEffect(() => {
+    clientTapModeRef.current = clientTapMode;
+  }, [clientTapMode]);
+
+  useEffect(() => {
     if (!mapInstRef.current) return;
-    const handler = (e: any) => handleMapClickPP(e.latlng.lat, e.latlng.lng);
+    const handler = (e: any) => {
+      handleMapClickPP(e.latlng.lat, e.latlng.lng);
+      handleMapClickClient(e.latlng.lat, e.latlng.lng);
+    };
     mapInstRef.current.on('click', handler);
     return () => { mapInstRef.current?.off('click', handler); };
-  }, [mapInstRef.current, handleMapClickPP]);
+  }, [mapInstRef.current, handleMapClickPP, handleMapClickClient]);
 
   // ─── Guardar Punto de Partida independientemente ───
   const savePuntoPartida = useCallback(async () => {
@@ -1060,6 +1095,24 @@ export default function CargoCubaPage() {
         )}
       </AnimatePresence>
 
+      {/* ═══ BANNER: Toca el mapa para recogida (cliente) ═══ */}
+      <AnimatePresence>
+        {clientTapMode && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
+            className="absolute top-14 left-2 right-2 z-[1005] bg-emerald-500 text-white px-4 py-3 rounded-2xl shadow-2xl"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <MapPin className="h-5 w-5 animate-bounce" />
+                <span className="font-bold text-sm">Toca el mapa donde quieres la recogida</span>
+              </div>
+              <button onClick={() => { clientTapModeRef.current = false; setClientTapMode(false); }} className="bg-white/20 rounded-full p-1.5"><X className="h-4 w-4" /></button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ═══ FLOTANTE: Punto seleccionado - Guardar sin abrir panel ═══ */}
       <AnimatePresence>
         {driverPPLat && driverPPLng && !ppTapMode && panel === 'none' && (
@@ -1348,9 +1401,16 @@ export default function CargoCubaPage() {
                 {locating ? 'Obteniendo GPS...' : form.lat !== 0 ? `Ubicacion lista (${distMilesFromBase(form.lat, form.lng).toFixed(1)} mi de la Base)` : 'Busca tu direccion o usa GPS'}
               </div>
 
-              {/* ── Opcion 1: Pegar enlace de Google Maps ── */}
+              {/* ── Opcion 1: Tocar el Mapa (metodo principal) ── */}
+              <button onClick={() => { clientTapModeRef.current = true; setClientTapMode(true); setPanel('none'); toast.info('Toca el mapa donde quieres la recogida'); }}
+                className="w-full h-12 rounded-xl bg-gradient-to-r from-emerald-500 to-green-500 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-green-200 hover:from-emerald-600 hover:to-green-600 transition-all"
+                style={{ touchAction: 'manipulation' }}>
+                <MapPin className="h-5 w-5" /> Tocar el Mapa
+              </button>
+
+              {/* ── Opcion 2: Pegar enlace de Google Maps o escribir ── */}
               <div>
-                <p className="text-[10px] text-zinc-500 font-semibold mb-1">Pega un enlace de Google Maps o escribe direccion:</p>
+                <p className="text-[10px] text-zinc-500 font-semibold mb-1">O pega enlace de Google Maps / escribe direccion:</p>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
                   <input
@@ -1378,7 +1438,7 @@ export default function CargoCubaPage() {
                 )}
               </div>
 
-              {/* ── Opcion 2: GPS ── */}
+              {/* ── Opcion 3: GPS ── */}
               <button onClick={getLocation} disabled={locating}
                 className="w-full h-10 rounded-xl border border-dashed border-zinc-300 text-xs font-semibold text-zinc-500 hover:bg-zinc-50 hover:border-zinc-400 flex items-center justify-center gap-2 disabled:opacity-50 transition-all"
                 style={{ touchAction: 'manipulation' }}>
