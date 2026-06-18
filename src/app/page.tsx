@@ -4,8 +4,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import {
-  ShoppingCart, MapPin, Route, Check, X, Phone,
-  Truck, Loader2, ChevronRight, Zap, RotateCcw,
+  ShoppingCart, MapPin, Route, Trash2, Check, X, Phone,
+  Truck, Loader2, ChevronRight, Zap, RotateCcw, Users, Shield,
   Navigation, Crosshair, ArrowLeft, Radar, Map, Clock, Search
 } from 'lucide-react';
 
@@ -25,6 +25,7 @@ interface GeoSuggestion {
 interface Driver {
   phone: string; nombre: string; lat: number; lng: number; activo: boolean; updatedAt: string;
   mensaje?: string | null; precioServicio?: string | null; direccionRecojo?: string | null; comunidad?: string | null;
+  puntoPartidaLat?: number | null; puntoPartidaLng?: number | null; puntoPartidaDir?: string | null;
 }
 
 // ─── Base / Depot ──────────────────────────────────────────────────────────
@@ -39,10 +40,10 @@ const RUTA = '#2563eb';
 const BASE_COLOR = '#dc2626';
 const CHOFER_COLOR = '#2563eb';
 
-const CHOFERES = [
-  'Luis Martinez', 'Carlos Rodriguez', 'Miguel Perez', 'Roberto Garcia',
-  'Antonio Fernandez', 'Jose Hernandez',
-];
+// Colores para cada grupo de chofer
+const GRUPO_COLORES = ['#2563eb', '#ea580c', '#16a34a', '#9333ea', '#dc2626', '#0891b2', '#ca8a04', '#e11d48'];
+
+function getGrupoColor(idx: number) { return GRUPO_COLORES[idx % GRUPO_COLORES.length]; }
 
 // ─── OSRM ───────────────────────────────────────────────────────────────────
 async function calcRoute(points: { lat: number; lng: number }[]) {
@@ -73,8 +74,12 @@ function haversine(lat1: number, lon1: number, lat2: number, lon2: number): numb
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+function distMiles(lat: number, lng: number, fromLat = BASE_LAT, fromLng = BASE_LNG): number {
+  return haversine(fromLat, fromLng, lat, lng) * 0.621371;
+}
+
 function distMilesFromBase(lat: number, lng: number): number {
-  return haversine(BASE_LAT, BASE_LNG, lat, lng) * 0.621371;
+  return distMiles(lat, lng);
 }
 
 function optimizeOrder(pickups: Pickup[], startLat = BASE_LAT, startLng = BASE_LNG): Pickup[] {
@@ -143,7 +148,7 @@ function pinSVG(color: string, num?: number, pulse?: boolean) {
 
 export default function CargoCubaPage() {
   // ─── Overlay panels ───
-  const [panel, setPanel] = useState<'none' | 'clientForm' | 'driver'>('none');
+  const [panel, setPanel] = useState<'none' | 'clientForm' | 'driver' | 'admin'>('none');
 
   // ─── Data ───
   const [pickups, setPickups] = useState<Pickup[]>([]);
@@ -155,10 +160,14 @@ export default function CargoCubaPage() {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
-  const mapFittedOnce = useRef(false);
+  const routeLineRef = useRef<any>(null);
+  const driverAccuracyRef = useRef<any>(null);
   const LRef = useRef<any>(null);
 
-
+  // ─── Route ───
+  const [optimizedRoute, setOptimizedRoute] = useState<Pickup[]>([]);
+  const [routeData, setRouteData] = useState<{ route: [number, number][]; totalDistance: number; totalDuration: number; legs: { duration: number; distance: number }[] } | null>(null);
+  const [optimizing, setOptimizing] = useState(false);
 
   // ─── Client form ───
   const [form, setForm] = useState({ nombre: '', telefono: '', direccion: '', lat: 0, lng: 0, notas: '', horarioReady: '' });
@@ -182,13 +191,34 @@ export default function CargoCubaPage() {
   const [driverPrecio, setDriverPrecio] = useState('');
   const [driverDirRecojo, setDriverDirRecojo] = useState('');
   const [driverComunidad, setDriverComunidad] = useState('');
+  // ─── Punto de Partida del Chofer ───
+  const [driverPPLat, setDriverPPLat] = useState<number | null>(null);
+  const [driverPPLng, setDriverPPLng] = useState<number | null>(null);
+  const [driverPPDir, setDriverPPDir] = useState('');
+  const [ppSearchQuery, setPpSearchQuery] = useState('');
+  const [ppSuggestions, setPpSuggestions] = useState<GeoSuggestion[]>([]);
+  const [ppSearching, setPpSearching] = useState(false);
+  const [ppShowSugg, setPpShowSugg] = useState(false);
+  const ppTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ppPreviewRef = useRef<any>(null);
   const watchIdRef = useRef<number | null>(null);
 
   // ─── Follow Driver Mode ───
   const [followingDriver, setFollowingDriver] = useState(false);
   const [followDriverPhone, setFollowDriverPhone] = useState<string | null>(null);
 
+  // ─── Admin (no password — direct access) ───
+  const [adminChofer, setAdminChofer] = useState('');
+  const [adminTab, setAdminTab] = useState<'lista' | 'distancias' | 'ruta' | 'grupos'>('lista');
+  const [distMatrix, setDistMatrix] = useState<{ from: string; to: string; distMi: number }[]>([]);
+  const [calculatingDist, setCalculatingDist] = useState(false);
+  const [scheduledDriver, setScheduledDriver] = useState('');
+  const [scheduling, setScheduling] = useState(false);
 
+  // ─── Grupos por Chofer (puntos de partida) ───
+  const [driverRoutes, setDriverRoutes] = useState<Map<string, { route: Pickup[]; data: { route: [number, number][]; totalDistance: number; totalDuration: number; legs: { duration: number; distance: number }[] } | null }>>(new Map());
+  const [optimizingAll, setOptimizingAll] = useState(false);
+  const [selectedGrupoChofer, setSelectedGrupoChofer] = useState<string | null>(null);
 
   // ─── Select Mode (tap markers to measure distances) ───
   const [selectMode, setSelectMode] = useState(false);
@@ -281,8 +311,6 @@ export default function CargoCubaPage() {
     if (!mapInstRef.current) {
       mapInstRef.current = L.map(mapRef.current, { center: [BASE_LAT, BASE_LNG], zoom: 11, zoomControl: true });
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '', maxZoom: 19 }).addTo(mapInstRef.current);
-      // Once user manually pans or zooms, stop auto-fitting
-      mapInstRef.current.on('dragstart zoomstart', () => { mapFittedOnce.current = true; });
     }
   }, [mapReady]);
 
@@ -292,13 +320,15 @@ export default function CargoCubaPage() {
 
     // Clear all markers
     markersRef.current.forEach(m => m.remove()); markersRef.current = [];
+    if (routeLineRef.current) { routeLineRef.current.remove(); routeLineRef.current = null; }
+    if (driverAccuracyRef.current) { driverAccuracyRef.current.remove(); driverAccuracyRef.current = null; }
     selectLinesRef.current.forEach(l => l.remove()); selectLinesRef.current = [];
 
     // Clear preview marker if exists
     if (previewMarkerRef.current) { previewMarkerRef.current.remove(); previewMarkerRef.current = null; }
 
     const active = pickups.filter(p => p.estado !== 'cancelado');
-    const displayList = active;
+    const displayList = optimizedRoute.length > 0 && panel === 'admin' ? optimizedRoute : active;
 
     // If following a driver, don't auto-fit bounds
     if (followingDriver) {
@@ -310,10 +340,39 @@ export default function CargoCubaPage() {
     // ─── BASE marker (red) ───
     const baseIcon = L.icon({ iconUrl: pinSVG(BASE_COLOR), iconSize: [36, 46], iconAnchor: [18, 46], popupAnchor: [0, -46] });
     const baseM = L.marker([BASE_LAT, BASE_LNG], { icon: baseIcon, zIndexOffset: 2000 }).addTo(mapInstRef.current);
-    baseM.bindPopup(`<div style="font-family:system-ui;min-width:160px;"><strong style="font-size:13px;">Base</strong><div style="font-size:11px;color:#666;margin-top:2px;">${BASE_NAME}</div><div style="margin-top:4px;font-size:10px;color:#dc2626;font-weight:600;">Punto de partida</div></div>`);
+    baseM.bindPopup(`<div style="font-family:system-ui;min-width:160px;"><strong style="font-size:13px;">Base</strong><div style="font-size:11px;color:#666;margin-top:2px;">${BASE_NAME}</div><div style="margin-top:4px;font-size:10px;color:#dc2626;font-weight:600;">Punto de partida principal</div></div>`);
     bounds.push([BASE_LAT, BASE_LNG]); markersRef.current.push(baseM);
 
+    // ─── PUNTOS DE PARTIDA de cada chofer (estrellas naranja) ───
+    drivers.filter(d => d.puntoPartidaLat && d.puntoPartidaLng).forEach((d, idx) => {
+      const color = getGrupoColor(idx);
+      const ppIcon = L.divIcon({
+        html: `<div style="position:relative;"><div style="width:32px;height:32px;background:${color};border:3px solid #fff;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);display:flex;align-items:center;justify-content:center;box-shadow:0 3px 12px rgba(0,0,0,0.3);"><span style="transform:rotate(45deg);font-size:14px;">🏠</span></div><div style="position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);white-space:nowrap;background:${color};color:#fff;padding:1px 6px;border-radius:6px;font-size:8px;font-weight:800;font-family:system-ui;box-shadow:0 1px 4px rgba(0,0,0,0.2);">${d.nombre.split(' ')[0]}</div></div>`,
+        className: '', iconSize: [32, 50], iconAnchor: [16, 32],
+      });
+      const ppM = L.marker([d.puntoPartidaLat!, d.puntoPartidaLng!], { icon: ppIcon, zIndexOffset: 2500 }).addTo(mapInstRef.current);
+      const ppDist = distMiles(d.puntoPartidaLat!, d.puntoPartidaLng!).toFixed(1);
+      ppM.bindPopup(`<div style="font-family:system-ui;min-width:180px;"><strong style="font-size:13px;">Sede: ${d.nombre}</strong><div style="font-size:11px;color:#666;margin-top:2px;">${d.puntoPartidaDir || 'Sin direccion'}</div><div style="margin-top:4px;font-size:10px;color:${color};font-weight:600;">Punto de partida de este chofer</div><div style="font-size:10px;color:#dc2626;">${ppDist} mi de la Base</div></div>`);
+      bounds.push([d.puntoPartidaLat!, d.puntoPartidaLng!]); markersRef.current.push(ppM);
+    });
 
+    // ─── Route lines per driver group (Grupos tab) ───
+    if (adminTab === 'grupos' && driverRoutes.size > 0) {
+      let grupoIdx = 0;
+      for (const [nombre, routeInfo] of driverRoutes) {
+        if (routeInfo.data && routeInfo.data.route.length > 1) {
+          const color = getGrupoColor(grupoIdx);
+          const line = L.polyline(routeInfo.data.route, { color, weight: 4, opacity: 0.8, dashArray: '12, 8', lineCap: 'round' }).addTo(mapInstRef.current);
+          markersRef.current.push(line);
+        }
+        grupoIdx++;
+      }
+    }
+
+    // ─── Route line (admin optimize) ───
+    if (routeData && routeData.route.length > 1 && panel === 'admin') {
+      routeLineRef.current = L.polyline(routeData.route, { color: RUTA, weight: 4, opacity: 0.8, dashArray: '12, 8', lineCap: 'round' }).addTo(mapInstRef.current);
+    }
 
     // ─── SELECT MODE: lines between selected points ───
     if (selectMode && selectedIds.length > 0) {
@@ -352,7 +411,7 @@ export default function CargoCubaPage() {
     displayList.forEach((p, idx) => {
       const isVerde = p.estado === 'esperando';
       const color = isVerde ? VERDE : MORADO;
-      const showNum = false;
+      const showNum = optimizedRoute.length > 0 && panel === 'admin';
       const selIdx = selectMode ? selectedIds.indexOf(p.id) : -1;
       const isSelected = selIdx >= 0;
       // In select mode, selected pins turn orange with selection number
@@ -410,17 +469,16 @@ export default function CargoCubaPage() {
       bounds.push([d.lat, d.lng]); markersRef.current.push(dM);
     });
 
-    // Only auto-fit on first load (before user interacts)
-    if (!followingDriver && !mapFittedOnce.current) {
+    // Only auto-fit if NOT following a driver
+    if (!followingDriver) {
       if (bounds.length > 1) {
         mapInstRef.current.fitBounds(bounds, { padding: [60, 60], maxZoom: 13 });
       } else {
         mapInstRef.current.setView([BASE_LAT, BASE_LNG], 12);
       }
-      mapFittedOnce.current = true;
     }
     setTimeout(() => mapInstRef.current?.invalidateSize(), 150);
-  }, [pickups, drivers, panel, mapReady, followingDriver, selectMode, selectedIds, selectRouteData, handleMarkerTap]);
+  }, [pickups, drivers, optimizedRoute, routeData, panel, mapReady, followingDriver, selectMode, selectedIds, selectRouteData, handleMarkerTap]);
 
   useEffect(() => { setTimeout(() => { initMap(); renderMarkers(); }, 200); }, [initMap, renderMarkers]);
   useEffect(() => { if (mapInstRef.current) renderMarkers(); }, [renderMarkers]);
@@ -535,6 +593,50 @@ export default function CargoCubaPage() {
     setSubmitting(false);
   };
 
+  // ─── Punto de Partida: Address Search ───
+  const handlePPSearch = useCallback((q: string) => {
+    setPpSearchQuery(q);
+    if (ppTimerRef.current) clearTimeout(ppTimerRef.current);
+    if (q.length < 3) { setPpSuggestions([]); setPpShowSugg(false); return; }
+    setPpSearching(true); setPpShowSugg(true);
+    ppTimerRef.current = setTimeout(async () => {
+      const results = await forwardGeocode(q);
+      setPpSuggestions(results); setPpSearching(false);
+    }, 400);
+  }, []);
+
+  const selectPPSuggestion = useCallback((s: GeoSuggestion) => {
+    const lat = parseFloat(s.lat), lng = parseFloat(s.lon);
+    const shortAddr = s.display_name.split(',').slice(0, 3).join(',');
+    setDriverPPLat(lat); setDriverPPLng(lng); setDriverPPDir(shortAddr);
+    setPpSearchQuery(shortAddr); setPpShowSugg(false); setPpSuggestions([]);
+    // Show preview on map
+    if (ppPreviewRef.current) { ppPreviewRef.current.remove(); ppPreviewRef.current = null; }
+    if (mapInstRef.current && LRef.current) {
+      const L = LRef.current;
+      const icon = L.icon({ iconUrl: pinSVG('#ea580c'), iconSize: [36, 46], iconAnchor: [18, 46], popupAnchor: [0, -46] });
+      ppPreviewRef.current = L.marker([lat, lng], { icon, zIndexOffset: 5000 }).addTo(mapInstRef.current);
+      ppPreviewRef.current.bindPopup('<div style="font-family:system-ui;"><strong style="font-size:12px;">Punto de Partida</strong><div style="font-size:10px;color:#ea580c;font-weight:600;">Sede de este chofer</div></div>');
+      mapInstRef.current.setView([lat, lng], 15, { animate: true });
+    }
+  }, []);
+
+  const setPPFromGPS = useCallback(() => {
+    if (!navigator.geolocation) { toast.error('GPS no disponible'); return; }
+    toast.info('Obteniendo ubicacion para punto de partida...');
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude: lat, longitude: lng } = pos.coords;
+        setDriverPPLat(lat); setDriverPPLng(lng);
+        const dir = await reverseGeocode(lat, lng);
+        if (dir) { const short = dir.split(',').slice(0, 3).join(','); setDriverPPDir(short); setPpSearchQuery(short); }
+        toast.success('Punto de partida definido por GPS');
+      },
+      () => toast.error('No se pudo obtener ubicacion'),
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
+  }, []);
+
   // ═══════════════════════════════════════════════════════════════════════════
   // DRIVER: GPS TRACKING
   // ═══════════════════════════════════════════════════════════════════════════
@@ -548,6 +650,9 @@ export default function CargoCubaPage() {
       precioServicio: driverPrecio.trim() || null,
       direccionRecojo: driverDirRecojo.trim() || null,
       comunidad: driverComunidad.trim() || null,
+      puntoPartidaLat: driverPPLat,
+      puntoPartidaLng: driverPPLng,
+      puntoPartidaDir: driverPPDir.trim() || null,
     };
     navigator.geolocation.getCurrentPosition(async (pos) => {
       const { latitude: lat, longitude: lng } = pos.coords;
@@ -589,12 +694,181 @@ export default function CargoCubaPage() {
     } catch {}
   };
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ADMIN: ACTIONS
+  // ═══════════════════════════════════════════════════════════════════════════
+  const updatePickup = async (id: number, data: any) => {
+    try {
+      const r = await fetch('/api/pickups', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, ...data }),
+      });
+      const j = await r.json(); if (j.ok) load(); else toast.error(j.error || 'Error');
+    } catch { toast.error('Error'); }
+  };
 
+  const deletePickup = async (id: number) => {
+    try {
+      const r = await fetch(`/api/pickups?id=${id}`, { method: 'DELETE' });
+      const j = await r.json(); if (j.ok) { toast.success('Eliminada'); load(); }
+    } catch {}
+  };
+
+  // ─── Compute distance matrix between all pickups + origin point ───
+  const handleCalcDistances = async () => {
+    const active = pickups.filter(p => p.estado !== 'cancelado');
+    if (active.length < 2) { toast.error('Necesitas al menos 2 clientes'); return; }
+    setCalculatingDist(true);
+    try {
+      const matrix: { from: string; to: string; distMi: number }[] = [];
+      // Use selected driver's punto de partida if available, otherwise BASE
+      const selDriver = drivers.find(d => d.nombre === adminChofer);
+      const originLat = selDriver?.puntoPartidaLat ?? BASE_LAT;
+      const originLng = selDriver?.puntoPartidaLng ?? BASE_LNG;
+      const originName = selDriver?.puntoPartidaDir || 'BASE';
+      const all = [{ name: originName, lat: originLat, lng: originLng }, ...active.map(p => ({ name: p.nombre, lat: p.lat, lng: p.lng }))];
+      for (let i = 0; i < all.length; i++) {
+        for (let j = i + 1; j < all.length; j++) {
+          const dMi = haversine(all[i].lat, all[i].lng, all[j].lat, all[j].lng) * 0.621371;
+          matrix.push({ from: all[i].name, to: all[j].name, distMi: Math.round(dMi * 10) / 10 });
+        }
+      }
+      setDistMatrix(matrix);
+      setAdminTab('distancias');
+      toast.success(`Matriz: ${all.length} puntos, ${matrix.length} pares` + (adminChofer ? ` desde ${selDriver?.nombre}` : ''));
+    } catch (err: any) { toast.error('Error: ' + (err.message || '')); }
+    setCalculatingDist(false);
+  };
+
+  const handleOptimize = async () => {
+    let esperando = pickups.filter(p => p.estado === 'esperando');
+    if (adminChofer) esperando = esperando.filter(p => p.choferAsignado === adminChofer);
+    if (esperando.length < 1) { toast.error(adminChofer ? 'No hay clientes asignados a este chofer' : 'No hay clientes en verde'); return; }
+    setOptimizing(true);
+    try {
+      // Use driver's punto de partida as start, fallback to BASE
+      const selDriver = drivers.find(d => d.nombre === adminChofer);
+      const startLat = selDriver?.puntoPartidaLat ?? BASE_LAT;
+      const startLng = selDriver?.puntoPartidaLng ?? BASE_LNG;
+      const ordered = optimizeOrder(esperando, startLat, startLng);
+      setOptimizedRoute(ordered);
+      const allPoints = [{ lat: startLat, lng: startLng }, ...ordered.map(p => ({ lat: p.lat, lng: p.lng }))];
+      const result = await calcRoute(allPoints);
+      setRouteData(result);
+      for (let i = 0; i < ordered.length; i++) await updatePickup(ordered[i].id, { ordenRuta: i + 1 });
+      const desde = selDriver ? `desde ${selDriver.nombre}` : 'desde la Base';
+      toast.success(`Ruta optimizada ${desde}: ${ordered.length} paradas, ${fmtDist(result.totalDistance)}, ${fmtTime(result.totalDuration)}`);
+      setAdminTab('ruta');
+    } catch (err: any) { toast.error('Error ruta: ' + (err.message || '')); }
+    setOptimizing(false);
+  };
+
+  // ─── Schedule route to driver (assign chofer to all stops) ───
+  const handleScheduleRoute = async () => {
+    if (optimizedRoute.length === 0) { toast.error('Optimiza la ruta primero'); return; }
+    if (!scheduledDriver) { toast.error('Selecciona un chofer'); return; }
+    setScheduling(true);
+    try {
+      for (const p of optimizedRoute) {
+        await updatePickup(p.id, { choferAsignado: scheduledDriver });
+      }
+      toast.success(`Ruta programada para ${scheduledDriver}: ${optimizedRoute.length} paradas`);
+    } catch { toast.error('Error al programar'); }
+    setScheduling(false);
+  };
+
+  // ─── Cumulative route info for scheduling ───
+  const getRouteOrigin = () => {
+    if (adminChofer) {
+      const selDriver = drivers.find(d => d.nombre === adminChofer);
+      if (selDriver?.puntoPartidaLat && selDriver?.puntoPartidaLng) {
+        return { lat: selDriver.puntoPartidaLat, lng: selDriver.puntoPartidaLng, name: selDriver.puntoPartidaDir || selDriver.nombre };
+      }
+    }
+    return { lat: BASE_LAT, lng: BASE_LNG, name: BASE_NAME };
+  };
+
+  const routeOrigin = getRouteOrigin();
+
+  const routeStops = routeData && optimizedRoute.length > 0
+    ? (() => {
+        const stops: { name: string; distFromPrev: number; cumDist: number; timeFromPrev: number; cumTime: number; distFromOrigin: number; ready?: string }[] = [];
+        let cumD = 0, cumT = 0;
+        for (let i = 0; i < optimizedRoute.length; i++) {
+          const leg = routeData.legs[i + 1] || { distance: 0, duration: 0 };
+          const p = optimizedRoute[i];
+          if (i === 0 && routeData.legs[0]) {
+            cumD = routeData.legs[0].distance;
+            cumT = routeData.legs[0].duration;
+          } else {
+            cumD += leg.distance;
+            cumT += leg.duration;
+          }
+          stops.push({
+            name: p.nombre,
+            distFromPrev: i === 0 ? (routeData.legs[0]?.distance || 0) : leg.distance,
+            cumDist: cumD,
+            timeFromPrev: i === 0 ? (routeData.legs[0]?.duration || 0) : leg.duration,
+            cumTime: cumT,
+            distFromOrigin: distMiles(p.lat, p.lng, routeOrigin.lat, routeOrigin.lng),
+            ready: p.horarioReady || undefined,
+          });
+        }
+        return stops;
+      })()
+    : [];
+
+  // ─── Chofer options from DB (all unique driver names + any assigned names) ───
+  const choferOptions = [...new Set([
+    ...drivers.map(d => d.nombre),
+    ...pickups.map(p => p.choferAsignado).filter(Boolean) as string[],
+  ])];
 
   // ─── Stats ───
   const esperandoCount = pickups.filter(p => p.estado === 'esperando').length;
   const recogidosCount = pickups.filter(p => p.estado === 'recogido').length;
   const activeDriversCount = drivers.filter(d => d.activo).length;
+
+  // ─── Grupos por chofer (computado) ───
+  const choferesConAsignados = (() => {
+    const assigned = pickups.filter(p => p.choferAsignado && p.estado !== 'cancelado');
+    const groups: { nombre: string; driver: Driver | undefined; pickups: Pickup[] }[] = [];
+    const map = new Map<string, Pickup[]>();
+    for (const p of assigned) {
+      if (!map.has(p.choferAsignado!)) map.set(p.choferAsignado!, []);
+      map.get(p.choferAsignado!)!.push(p);
+    }
+    for (const [nombre, ps] of map) {
+      groups.push({ nombre, driver: drivers.find(d => d.nombre === nombre), pickups: ps });
+    }
+    return groups;
+  })();
+
+  const unassigned = pickups.filter(p => !p.choferAsignado && p.estado !== 'cancelado');
+
+  // ─── Optimizar TODOS los grupos ───
+  const handleOptimizeAll = async () => {
+    if (choferesConAsignados.length === 0) { toast.error('No hay choferes con clientes asignados'); return; }
+    setOptimizingAll(true);
+    const newRoutes = new Map<string, { route: Pickup[]; data: any }>();
+    try {
+      for (const grupo of choferesConAsignados) {
+        const esperando = grupo.pickups.filter(p => p.estado === 'esperando');
+        if (esperando.length < 1) continue;
+        const startLat = grupo.driver?.puntoPartidaLat ?? BASE_LAT;
+        const startLng = grupo.driver?.puntoPartidaLng ?? BASE_LNG;
+        const ordered = optimizeOrder(esperando, startLat, startLng);
+        const allPoints = [{ lat: startLat, lng: startLng }, ...ordered.map(p => ({ lat: p.lat, lng: p.lng }))];
+        let result = null;
+        try { result = await calcRoute(allPoints); } catch {}
+        newRoutes.set(grupo.nombre, { route: ordered, data: result });
+      }
+      setDriverRoutes(newRoutes);
+      toast.success(`Optimizadas ${newRoutes.size} rutas (una por chofer)`);
+      setAdminTab('grupos');
+    } catch (err: any) { toast.error('Error: ' + (err.message || '')); }
+    setOptimizingAll(false);
+  };
 
   // ─── Select mode computed values ───
   const selectedPickups = selectedIds.map(id => pickups.find(p => p.id === id)).filter(Boolean) as Pickup[];
@@ -745,7 +1019,7 @@ export default function CargoCubaPage() {
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.8 }}
-            onClick={() => { setPanel('none'); setFollowingDriver(false); setFollowDriverPhone(null); }}
+            onClick={() => { setPanel('none'); setOptimizedRoute([]); setRouteData(null); setFollowingDriver(false); setFollowDriverPhone(null); }}
             className="absolute bottom-4 left-4 z-[1003] flex items-center gap-2 bg-blue-600 text-white px-4 py-3 rounded-2xl shadow-2xl font-bold text-xs"
             style={{ touchAction: 'manipulation' }}>
             <Map className="h-4 w-4" />
@@ -784,6 +1058,12 @@ export default function CargoCubaPage() {
             )}
           </motion.button>
 
+          <motion.button whileTap={{ scale: 0.92 }} onClick={() => { setAdminTab('lista'); setPanel('admin'); }}
+            className="flex flex-col items-center gap-1 bg-white rounded-2xl px-3 py-2.5 shadow-2xl border border-zinc-100"
+            style={{ touchAction: 'manipulation' }}>
+            <div className="w-9 h-9 rounded-full bg-purple-500 flex items-center justify-center"><Shield className="h-4 w-4 text-white" /></div>
+            <span className="text-[9px] font-bold text-zinc-700 leading-tight">Admin</span>
+          </motion.button>
         </div>
       )}
 
@@ -973,7 +1253,7 @@ export default function CargoCubaPage() {
             className="absolute top-0 right-0 bottom-0 z-[1001] w-full max-w-sm bg-white/95 backdrop-blur-sm shadow-2xl border-l border-zinc-200 flex flex-col">
 
             <div className="px-4 py-3 border-b border-zinc-100 flex items-center gap-3 bg-white">
-              <button onClick={() => { if (driverActive) stopDriverTracking(); setPanel('none'); }} className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center"><ArrowLeft className="h-4 w-4 text-zinc-600" /></button>
+              <button onClick={() => { if (driverActive) stopDriverTracking(); setPanel('none'); if (ppPreviewRef.current) { ppPreviewRef.current.remove(); ppPreviewRef.current = null; } }} className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center"><ArrowLeft className="h-4 w-4 text-zinc-600" /></button>
               <h3 className="font-bold text-sm text-zinc-900 flex-1">Panel del Chofer</h3>
               {driverActive && <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-green-100 text-green-700 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />EN VIVO</span>}
             </div>
@@ -1000,6 +1280,52 @@ export default function CargoCubaPage() {
                     <span className="text-[10px] text-zinc-500 leading-tight flex items-center px-1">Precio<br/>servicio</span>
                   </div>
                   <input value={driverComunidad} onChange={e => setDriverComunidad(e.target.value)} placeholder="Tu comunidad (ej: Pinar del Rio, Hialeah)" className="w-full h-10 px-3 rounded-lg border border-orange-200 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 bg-white" />
+                </div>
+
+                {/* ─── PUNTO DE PARTIDA (SEDE) ─── */}
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-3 space-y-2.5">
+                  <p className="text-[11px] font-bold text-blue-800 flex items-center gap-1.5">
+                    <MapPin className="h-4 w-4 text-blue-600" />
+                    Tu Punto de Partida (Sede)
+                  </p>
+                  <p className="text-[10px] text-blue-600">Donde comienzas tu ruta. Si no lo pones, se usa la Base.</p>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-blue-400" />
+                    <input
+                      value={ppSearchQuery}
+                      onChange={e => handlePPSearch(e.target.value)}
+                      onFocus={() => { if (ppSuggestions.length > 0) setPpShowSugg(true); }}
+                      placeholder="Busca tu sede (ej: 456 Pine St, Orlando)"
+                      className="w-full h-10 pl-9 pr-9 rounded-lg border border-blue-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"
+                    />
+                    {ppSearching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-blue-400 animate-spin" />}
+                    {!ppSearching && ppSearchQuery && (
+                      <button onClick={() => { setPpSearchQuery(''); setPpSuggestions([]); setPpShowSugg(false); setDriverPPLat(null); setDriverPPLng(null); setDriverPPDir(''); }} className="absolute right-3 top-1/2 -translate-y-1/2"><X className="h-3.5 w-3.5 text-blue-400" /></button>
+                    )}
+                    {ppShowSugg && ppSuggestions.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-200 rounded-xl shadow-xl z-20 max-h-40 overflow-y-auto">
+                        {ppSuggestions.map((s, i) => (
+                          <button key={i} onClick={() => selectPPSuggestion(s)}
+                            className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-zinc-50 last:border-0 flex items-start gap-2" style={{ touchAction: 'manipulation' }}>
+                            <MapPin className="h-3.5 w-3.5 text-blue-500 mt-0.5 flex-shrink-0" />
+                            <span className="text-[11px] text-zinc-700 leading-relaxed">{s.display_name.split(',').slice(0, 3).join(',')}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <button onClick={setPPFromGPS} className="w-full h-9 rounded-lg border border-dashed border-blue-300 text-[10px] font-semibold text-blue-600 hover:bg-blue-50 flex items-center justify-center gap-1.5">
+                    <Crosshair className="h-3.5 w-3.5" /> Usar mi GPS actual como punto de partida
+                  </button>
+                  {driverPPLat && driverPPLng && (
+                    <div className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-blue-100">
+                      <Check className="h-4 w-4 text-green-600" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] font-bold text-green-700">Punto de partida configurado</p>
+                        <p className="text-[9px] text-zinc-500 truncate">{driverPPDir || `${driverPPLat.toFixed(4)}, ${driverPPLng.toFixed(4)}`}</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {!driverActive ? (
@@ -1044,7 +1370,7 @@ export default function CargoCubaPage() {
                 <div>
                   <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-2">Mis Recogidas Asignadas</p>
                   {pickups.filter(p => p.choferAsignado === driverPhone.trim() && p.estado !== 'cancelado').length === 0 ? (
-                    <p className="text-xs text-zinc-400 text-center py-4">Aun no tienes recogidas asignadas.</p>
+                    <p className="text-xs text-zinc-400 text-center py-4">Aun no tienes recogidas asignadas. El admin te asignara clientes.</p>
                   ) : (
                     <div className="space-y-2">
                       {pickups.filter(p => p.choferAsignado === driverPhone.trim() && p.estado !== 'cancelado').map(p => {
@@ -1080,6 +1406,429 @@ export default function CargoCubaPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          PANEL: ADMIN
+          ═══════════════════════════════════════════════════════════════════ */}
+      <AnimatePresence>
+        {panel === 'admin' && (
+          <motion.div initial={{ x: 300 }} animate={{ x: 0 }} exit={{ x: 300 }}
+            className="absolute top-0 right-0 bottom-0 z-[1001] w-full max-w-md bg-white/95 backdrop-blur-sm shadow-2xl border-l border-zinc-200 flex flex-col">
+
+            {/* Admin header */}
+            <div className="px-4 py-3 border-b border-zinc-100 flex items-center gap-3 bg-white flex-shrink-0">
+              <button onClick={() => { setOptimizedRoute([]); setRouteData(null); setDriverRoutes(new Map()); setPanel('none'); }} className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center"><ArrowLeft className="h-4 w-4 text-zinc-600" /></button>
+              <h3 className="font-bold text-sm text-zinc-900 flex-1">Administracion</h3>
+              <select value={adminChofer} onChange={e => { setAdminChofer(e.target.value); setOptimizedRoute([]); setRouteData(null); setDistMatrix([]); }} className="h-7 px-2 rounded-lg border border-zinc-200 text-[10px] bg-white">
+                <option value="">Todos</option>
+                {[...new Set(pickups.map(p => p.choferAsignado).filter(Boolean))].map(c => <option key={c!} value={c!}>{c}</option>)}
+              </select>
+            </div>
+
+            {/* Active drivers bar */}
+            {activeDriversCount > 0 && (
+              <div className="px-4 py-2 border-b border-zinc-100 flex items-center gap-2 bg-blue-50/80 flex-shrink-0">
+                <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                <span className="text-[10px] font-bold text-blue-700">{activeDriversCount} chofer{activeDriversCount > 1 ? 'es' : ''} en vivo</span>
+                <div className="flex-1" />
+                <button onClick={() => handleFollowDriver()} className="text-[9px] font-bold px-2.5 py-1 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 flex items-center gap-1">
+                  <Navigation className="h-3 w-3" /> Seguir en mapa
+                </button>
+              </div>
+            )}
+
+            {/* Admin tabs */}
+            <div className="px-4 py-1.5 border-b border-zinc-100 flex items-center gap-1 bg-zinc-50/80 flex-shrink-0">
+              {(['lista', 'distancias', 'ruta', 'grupos'] as const).map(t => (
+                <button key={t} onClick={() => setAdminTab(t)}
+                  className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${adminTab === t ? 'bg-white text-zinc-900 shadow-sm border border-zinc-200' : 'text-zinc-400 hover:text-zinc-600'}`}
+                  style={{ touchAction: 'manipulation' }}>
+                  {t === 'lista' ? `Lista (${adminChofer ? pickups.filter(p => p.choferAsignado === adminChofer).length : pickups.length})` : t === 'distancias' ? 'Distancias' : t === 'ruta' ? 'Ruta' : `Grupos (${choferesConAsignados.length})`}
+                </button>
+              ))}
+              <div className="flex-1" />
+              <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-700"><span className="w-2 h-2 rounded-full bg-emerald-500" />{esperandoCount}</span>
+              <span className="flex items-center gap-1 text-[10px] font-bold text-purple-700"><span className="w-2 h-2 rounded-full bg-purple-500" />{recogidosCount}</span>
+            </div>
+
+            {/* Action bar for lista tab */}
+            {adminTab === 'lista' && (
+              <div className="px-4 py-2 border-b border-zinc-100 flex items-center gap-2 bg-white/80 flex-shrink-0">
+                <button onClick={handleOptimize} disabled={optimizing || esperandoCount < 1}
+                  className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 hover:bg-emerald-700 disabled:opacity-40"
+                  style={{ touchAction: 'manipulation' }}>
+                  {optimizing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}{optimizing ? '...' : 'Optimizar'}
+                </button>
+                <button onClick={handleCalcDistances} disabled={calculatingDist || pickups.filter(p => p.estado !== 'cancelado').length < 2}
+                  className="bg-orange-500 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 hover:bg-orange-600 disabled:opacity-40"
+                  style={{ touchAction: 'manipulation' }}>
+                  {calculating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Route className="h-3 w-3" />}{calculating ? '...' : 'Distancias'}
+                </button>
+                {optimizedRoute.length > 0 && <button onClick={() => { setOptimizedRoute([]); setRouteData(null); }} className="w-7 h-7 rounded-lg border border-zinc-200 flex items-center justify-center text-zinc-400"><RotateCcw className="h-3 w-3" /></button>}
+              </div>
+            )}
+
+            {/* Route summary (when optimized) */}
+            {routeData && optimizedRoute.length > 0 && adminTab === 'ruta' && (
+              <div className="bg-blue-50 border-b border-blue-200 px-4 py-2.5 flex-shrink-0">
+                <div className="flex items-center gap-2 mb-2">
+                  <Route className="h-3.5 w-3.5 text-blue-600" />
+                  <p className="text-[10px] font-bold text-blue-800">{optimizedRoute.length} paradas · {fmtDist(routeData.totalDistance)} total · {fmtTime(routeData.totalDuration)}</p>
+                </div>
+                {/* Schedule driver */}
+                <div className="flex items-center gap-2">
+                  <select value={scheduledDriver} onChange={e => setScheduledDriver(e.target.value)} className="h-7 px-2 rounded-lg border border-blue-200 text-[10px] bg-white flex-1">
+                    <option value="">Chofer...</option>{choferOptions.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <button onClick={handleScheduleRoute} disabled={scheduling || !scheduledDriver}
+                    className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 hover:bg-blue-700 disabled:opacity-40"
+                    style={{ touchAction: 'manipulation' }}>
+                    {scheduling ? <Loader2 className="h-3 w-3 animate-spin" /> : <Truck className="h-3 w-3" />}{scheduling ? '...' : 'Programar Chofer'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Tab: PICKUP LIST */}
+            {adminTab === 'lista' && (
+            <div className="flex-1 overflow-y-auto divide-y divide-zinc-50">
+              {loading ? <div className="flex items-center justify-center h-20"><Loader2 className="h-5 w-5 text-zinc-300 animate-spin" /></div> :
+              (adminChofer ? pickups.filter(p => p.choferAsignado === adminChofer) : pickups).length === 0 ? <div className="p-8 text-center"><Users className="h-7 w-7 text-zinc-300 mx-auto mb-2" /><p className="text-xs text-zinc-400">Sin solicitudes</p></div> :
+              (optimizedRoute.length > 0 ? optimizedRoute : (adminChofer ? pickups.filter(p => p.choferAsignado === adminChofer) : pickups)).map(p => (
+                <AdminCard key={p.id} pickup={p} onUpdate={updatePickup} onDelete={deletePickup}
+                  routeIdx={optimizedRoute.indexOf(p)} showRouteNum={optimizedRoute.length > 0}
+                  leg={routeData?.legs[optimizedRoute.indexOf(p) + 1]} choferOptions={choferOptions} />
+              ))}
+            </div>
+            )}
+
+            {/* Tab: DISTANCE MATRIX */}
+            {adminTab === 'distancias' && (
+            <div className="flex-1 overflow-y-auto p-4">
+              {distMatrix.length === 0 ? (
+                <div className="p-8 text-center">
+                  <Route className="h-7 w-7 text-zinc-300 mx-auto mb-2" />
+                  <p className="text-xs text-zinc-400 mb-3">Calcula las distancias entre todos los clientes</p>
+                  <button onClick={handleCalcDistances} disabled={calculatingDist || pickups.filter(p => p.estado !== 'cancelado').length < 2}
+                    className="bg-orange-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 mx-auto hover:bg-orange-600 disabled:opacity-40"
+                    style={{ touchAction: 'manipulation' }}>
+                    {calculating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Route className="h-4 w-4" />}{calculating ? 'Calculando...' : 'Calcular Distancias'}
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-[10px] font-bold text-zinc-500 mb-2">DISTANCIAS ENTRE PUNTOS (millas)</p>
+                  {/* From Base section */}
+                  <div className="bg-red-50 border border-red-100 rounded-xl p-3">
+                    <p className="text-[10px] font-bold text-red-600 mb-2 flex items-center gap-1"><MapPin className="h-3 w-3" />Desde {routeOrigin.name}</p>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {distMatrix.filter(m => m.from === routeOrigin.name).sort((a, b) => a.distMi - b.distMi).map((m, i) => (
+                        <div key={i} className="bg-white rounded-lg px-2.5 py-1.5 flex items-center justify-between">
+                          <span className="text-[10px] text-zinc-700 truncate max-w-[100px]">{m.to}</span>
+                          <span className="text-[10px] font-bold text-red-600">{m.distMi} mi</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Between clients */}
+                  <p className="text-[10px] font-bold text-zinc-500 mt-3 mb-1">ENTRE CLIENTES</p>
+                  {distMatrix.filter(m => m.from !== 'BASE').map((m, i) => (
+                    <div key={i} className="bg-white border border-zinc-100 rounded-lg px-3 py-2 flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-[10px] font-semibold text-zinc-700 truncate">{m.from}</span>
+                        <ArrowLeft className="h-3 w-3 text-zinc-300 rotate-180 flex-shrink-0" />
+                        <span className="text-[10px] font-semibold text-zinc-700 truncate">{m.to}</span>
+                      </div>
+                      <span className={`text-[10px] font-bold ml-2 flex-shrink-0 ${m.distMi < 2 ? 'text-emerald-600' : m.distMi < 5 ? 'text-orange-600' : 'text-red-600'}`}>{m.distMi} mi</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            )}
+
+            {/* Tab: ROUTE / SCHEDULE */}
+            {adminTab === 'ruta' && (
+            <div className="flex-1 overflow-y-auto">
+              {optimizedRoute.length === 0 || !routeData ? (
+                <div className="p-8 text-center">
+                  <Zap className="h-7 w-7 text-zinc-300 mx-auto mb-2" />
+                  <p className="text-xs text-zinc-400 mb-3">Optimiza la ruta primero para ver el itinerario completo</p>
+                  <button onClick={handleOptimize} disabled={optimizing || esperandoCount < 1}
+                    className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 mx-auto hover:bg-emerald-700 disabled:opacity-40"
+                    style={{ touchAction: 'manipulation' }}>
+                    {optimizing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}{optimizing ? '...' : 'Optimizar Ruta'}
+                  </button>
+                </div>
+              ) : (
+                <div className="p-4 space-y-2">
+                  <p className="text-[10px] font-bold text-zinc-500 mb-1">ITINERARIO COMPLETO CON DISTANCIAS</p>
+                  {/* Base start */}
+                  <div className="bg-red-50 border border-red-100 rounded-xl p-3 flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">{adminChofer ? 'S' : 'B'}</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] font-bold text-zinc-800">{routeOrigin.name}</p>
+                      <p className="text-[9px] text-zinc-500">{adminChofer ? 'Punto de partida del chofer' : 'Punto de partida principal'}</p>
+                    </div>
+                  </div>
+                  {/* Stops with leg distances */}
+                  {routeStops.map((stop, i) => (
+                    <div key={i}>
+                      {/* Leg connector */}
+                      <div className="ml-4 pl-4 border-l-2 border-blue-300 py-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[9px] text-blue-600 font-bold">Tramo {i + 1}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[9px] text-zinc-500">Directa: {(stop.distFromPrev * 0.000621371).toFixed(1)} mi</span>
+                            {routeData.legs[i + 1] && <span className="text-[9px] text-blue-600 font-semibold">Ruta: {fmtDist(routeData.legs[i + 1].distance)} · {fmtTime(routeData.legs[i + 1].duration)}</span>}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="bg-white border border-zinc-200 rounded-xl p-3 flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">{i + 1}</div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] font-bold text-zinc-800">{stop.name}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[9px] text-red-500 font-semibold">{stop.distFromOrigin.toFixed(1)} mi del origen</span>
+                            {stop.ready && <span className="text-[9px] bg-blue-100 text-blue-700 font-bold px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" />{stop.ready}</span>}
+                          </div>
+                          <p className="text-[9px] text-zinc-400 mt-0.5">Acumulado: {fmtDist(stop.cumDist)} · {fmtTime(stop.cumTime)} desde la Base</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {/* Total summary */}
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 mt-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Route className="h-4 w-4 text-emerald-600" />
+                      <span className="text-[11px] font-bold text-emerald-800">Resumen del Viaje</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div className="bg-white rounded-lg p-2">
+                        <p className="text-lg font-bold text-zinc-900">{optimizedRoute.length}</p>
+                        <p className="text-[9px] text-zinc-500">Paradas</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-2">
+                        <p className="text-lg font-bold text-zinc-900">{fmtDist(routeData.totalDistance)}</p>
+                        <p className="text-[9px] text-zinc-500">Distancia</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-2">
+                        <p className="text-lg font-bold text-zinc-900">{fmtTime(routeData.totalDuration)}</p>
+                        <p className="text-[9px] text-zinc-500">Tiempo</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            )}
+
+            {/* Tab: GRUPOS (rutas por chofer desde su punto de partida) */}
+            {adminTab === 'grupos' && (
+            <div className="flex-1 overflow-y-auto">
+              {choferesConAsignados.length === 0 ? (
+                <div className="p-8 text-center">
+                  <Users className="h-7 w-7 text-zinc-300 mx-auto mb-2" />
+                  <p className="text-xs text-zinc-400 mb-1">Sin choferes con clientes asignados</p>
+                  <p className="text-[10px] text-zinc-300">Asigna un chofer a cada cliente desde la Lista</p>
+                </div>
+              ) : (
+                <div className="p-3 space-y-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-[10px] font-bold text-zinc-500">GRUPOS POR CHOFER</p>
+                    <button onClick={handleOptimizeAll} disabled={optimizingAll}
+                      className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 hover:bg-emerald-700 disabled:opacity-40"
+                      style={{ touchAction: 'manipulation' }}>
+                      {optimizingAll ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}{optimizingAll ? '...' : 'Optimizar Todos'}
+                    </button>
+                  </div>
+                  {unassigned.length > 0 && (
+                    <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-3">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <div className="w-5 h-5 rounded-full bg-zinc-400 text-white text-[8px] font-bold flex items-center justify-center">?</div>
+                        <p className="text-[10px] font-bold text-zinc-600">Sin asignar ({unassigned.length})</p>
+                      </div>
+                      {unassigned.map(p => (
+                        <div key={p.id} className="ml-7 text-[9px] text-zinc-400 py-0.5">{p.nombre} — {p.estado === 'esperando' ? 'Espera' : 'Recogido'}</div>
+                      ))}
+                    </div>
+                  )}
+                  {choferesConAsignados.map((grupo, gIdx) => {
+                    const color = getGrupoColor(gIdx);
+                    const rInfo = driverRoutes.get(grupo.nombre);
+                    const hasPP = grupo.driver?.puntoPartidaLat && grupo.driver?.puntoPartidaLng;
+                    return (
+                      <div key={grupo.nombre} className={`border rounded-xl overflow-hidden ${selectedGrupoChofer === grupo.nombre ? 'border-blue-300 shadow-md' : 'border-zinc-200'}`}>
+                        <button onClick={() => setSelectedGrupoChofer(selectedGrupoChofer === grupo.nombre ? null : grupo.nombre)}
+                          className="w-full px-3 py-2.5 flex items-center gap-2.5 hover:bg-zinc-50" style={{ touchAction: 'manipulation' }}>
+                          <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: color }}>
+                            <span className="text-white text-[10px] font-bold">{gIdx + 1}</span>
+                          </div>
+                          <div className="flex-1 min-w-0 text-left">
+                            <p className="text-[11px] font-bold text-zinc-800">{grupo.nombre}</p>
+                            <p className="text-[9px] text-zinc-400">
+                              {grupo.pickups.length} cliente{grupo.pickups.length !== 1 ? 's' : ''}
+                              {hasPP ? ` · Sede: ${grupo.driver!.puntoPartidaDir || 'GPS'}` : ' · Sin punto de partida'}
+                            </p>
+                          </div>
+                          {rInfo && (
+                            <div className="text-right flex-shrink-0">
+                              <p className="text-[9px] font-bold" style={{ color }}>{fmtDist(rInfo.data?.totalDistance || 0)}</p>
+                              <p className="text-[8px] text-zinc-400">{fmtTime(rInfo.data?.totalDuration || 0)}</p>
+                            </div>
+                          )}
+                          <ChevronRight className={`w-3.5 h-3.5 text-zinc-400 transition-transform ${selectedGrupoChofer === grupo.nombre ? 'rotate-90' : ''}`} />
+                        </button>
+                        {selectedGrupoChofer === grupo.nombre && (
+                          <div className="border-t border-zinc-100 bg-zinc-50/50">
+                            <div className="px-3 py-2 flex items-center gap-2 border-b border-zinc-100">
+                              <div className="w-5 h-5 rounded text-[7px] font-bold flex items-center justify-center flex-shrink-0" style={{ background: color, color: '#fff' }}>S</div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[9px] font-bold text-zinc-700">{hasPP ? (grupo.driver!.puntoPartidaDir || 'Punto de partida') : 'Base (' + BASE_NAME + ')'}</p>
+                              </div>
+                            </div>
+                            {(rInfo?.route || grupo.pickups).map((p: Pickup, i: number) => {
+                              const leg = rInfo?.data?.legs[i + 1];
+                              return (
+                                <div key={p.id} className="px-3 py-2 flex items-center gap-2 border-b border-zinc-50 last:border-0">
+                                  <div className="w-5 h-5 rounded-full text-[8px] font-bold flex items-center justify-center flex-shrink-0" style={{ background: color, color: '#fff' }}>{i + 1}</div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-[10px] font-semibold text-zinc-800 truncate">{p.nombre}</p>
+                                    {leg && <p className="text-[8px] text-zinc-400">{fmtDist(leg.distance)} · {fmtTime(leg.duration)}</p>}
+                                  </div>
+                                  <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${p.estado === 'esperando' ? 'bg-emerald-100 text-emerald-700' : 'bg-purple-100 text-purple-700'}`}>
+                                    {p.estado === 'esperando' ? 'ESPERA' : 'RECOGIDO'}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                            {rInfo?.data && (
+                              <div className="px-3 py-2 flex items-center justify-between" style={{ background: `${color}11` }}>
+                                <span className="text-[9px] font-bold text-zinc-500">Total</span>
+                                <span className="text-[10px] font-bold" style={{ color }}>{fmtDist(rInfo.data.totalDistance)} · {fmtTime(rInfo.data.totalDuration)}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ═══════════ ROUTE ORDER OVERLAY ON MAP ═══════════ */}
+      {optimizedRoute.length > 0 && routeData && panel === 'admin' && adminTab === 'ruta' && (
+        <div className="absolute top-14 left-3 z-[999] bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-zinc-200 p-2.5 max-w-[220px] max-h-[50vh] overflow-y-auto">
+          <p className="text-[10px] font-bold text-zinc-600 mb-1.5 flex items-center gap-1"><Clock className="h-3 w-3 text-blue-500" /> RUTA POR HORARIO READY</p>
+          <div className="flex items-center gap-1.5 py-0.5 mb-1">
+            <div className="w-4 h-4 rounded-full bg-red-500 text-white text-[7px] font-bold flex items-center justify-center">{adminChofer ? 'S' : 'B'}</div>
+            <p className="text-[9px] text-red-600 font-semibold truncate">{routeOrigin.name}</p>
+          </div>
+          {(() => {
+            // Group by horarioReady for display
+            const groups: { time: string; items: { p: Pickup; idx: number }[] }[] = [];
+            let currentGroup: string | null = null;
+            optimizedRoute.forEach((p, i) => {
+              const t = p.horarioReady || 'Sin horario';
+              if (t !== currentGroup) {
+                currentGroup = t;
+                groups.push({ time: t, items: [] });
+              }
+              groups[groups.length - 1].items.push({ p, idx: i });
+            });
+            return groups.map(g => (
+              <div key={g.time}>
+                <div className="text-[9px] font-bold text-blue-600 bg-blue-50 rounded px-1.5 py-0.5 mt-1 mb-0.5 flex items-center gap-1">
+                  <Clock className="h-2.5 w-2.5" />{g.time}
+                </div>
+                {g.items.map(({ p, idx }) => {
+                  const distMi = distMilesFromBase(p.lat, p.lng).toFixed(1);
+                  return (
+                    <div key={p.id} className="flex items-start gap-1.5 py-0.5">
+                      <div className="w-4 h-4 rounded-full bg-blue-600 text-white text-[8px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{idx + 1}</div>
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-semibold text-zinc-800 truncate leading-tight">{p.nombre}</p>
+                        <p className="text-[8px] text-red-500">{distMi} mi de la Base</p>
+                        {routeData.legs[idx + 1] && <p className="text-[8px] text-blue-500">{fmtDist(routeData.legs[idx + 1].distance)} · {fmtTime(routeData.legs[idx + 1].duration)}</p>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ));
+          })()}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ADMIN CARD
+// ═══════════════════════════════════════════════════════════════════════════
+
+function AdminCard({ pickup, onUpdate, onDelete, routeIdx, showRouteNum, leg, choferOptions }: {
+  pickup: Pickup; onUpdate: (id: number, data: any) => void; onDelete: (id: number) => void;
+  routeIdx: number; showRouteNum: boolean; leg?: { duration: number; distance: number };
+  choferOptions: string[];
+}) {
+  const isEsp = pickup.estado === 'esperando';
+  const [expanded, setExpanded] = useState(false);
+  const distMi = distMilesFromBase(pickup.lat, pickup.lng).toFixed(1);
+  return (
+    <div style={isEsp ? { borderLeft: `3px solid ${VERDE}` } : pickup.estado === 'recogido' ? { borderLeft: `3px solid ${MORADO}` } : {}}>
+      <button onClick={() => setExpanded(!expanded)} className="w-full text-left px-3 py-2.5 flex items-center gap-2.5 hover:bg-zinc-50" style={{ touchAction: 'manipulation' }}>
+        {showRouteNum ? <div className="w-6 h-6 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">{routeIdx + 1}</div>
+          : <div className={`w-3 h-3 rounded-full flex-shrink-0 ${isEsp ? 'bg-emerald-500' : 'bg-purple-500'}`} />}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[12px] font-semibold text-zinc-800 truncate">{pickup.nombre}</span>
+            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isEsp ? 'bg-emerald-100 text-emerald-700' : 'bg-purple-100 text-purple-700'}`}>{isEsp ? 'ESPERA' : 'RECOGIDO'}</span>
+            {pickup.horarioReady && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" />{pickup.horarioReady}</span>}
+          </div>
+          <div className="flex items-center gap-2">
+            <p className="text-[10px] text-zinc-400 truncate">{pickup.direccion}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <span className="text-[9px] text-red-500 font-semibold">{distMi} mi</span>
+          {leg && leg.distance > 0 && <span className="text-[9px] text-blue-500 font-medium">{fmtDist(leg.distance)}</span>}
+          {pickup.telefono && <a href={`tel:${pickup.telefono}`} onClick={e => e.stopPropagation()} className="w-6 h-6 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center"><Phone className="h-3 w-3" /></a>}
+          <ChevronRight className={`w-3.5 h-3.5 text-zinc-400 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+        </div>
+      </button>
+      {expanded && (
+        <div className="px-3 pb-3 pt-0 space-y-2.5">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px]">
+            {pickup.telefono && <div><span className="text-zinc-400">Telefono:</span> <a href={`tel:${pickup.telefono}`} className="text-blue-600 font-medium">{pickup.telefono}</a></div>}
+            {pickup.choferAsignado && <div><span className="text-zinc-400">Chofer:</span> <span className="text-zinc-700 font-medium">{pickup.choferAsignado}</span></div>}
+            <div><span className="text-zinc-400">Distancia:</span> <span className="text-red-500 font-semibold">{distMi} mi de la Base</span></div>
+            <div><span className="text-zinc-400">Creada:</span> <span className="text-zinc-600">{new Date(pickup.createdAt).toLocaleString('es', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span></div>
+            {pickup.horarioReady && <div><span className="text-zinc-400">Horario Ready:</span> <span className="text-blue-600 font-bold">{pickup.horarioReady}</span></div>}
+            {pickup.notas && <div className="col-span-2"><span className="text-zinc-400">Notas:</span> <span className="text-zinc-600">{pickup.notas}</span></div>}
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {isEsp ? (
+              <button onClick={() => onUpdate(pickup.id, { estado: 'recogido', fechaRecogida: new Date().toISOString() })} className="flex items-center gap-1 text-[10px] font-bold px-3 py-1.5 rounded-lg bg-purple-100 text-purple-700 hover:bg-purple-200" style={{ touchAction: 'manipulation' }}><Check className="h-3 w-3" /> Recogido</button>
+            ) : (
+              <button onClick={() => onUpdate(pickup.id, { estado: 'esperando', fechaRecogida: null })} className="flex items-center gap-1 text-[10px] font-bold px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200"><RotateCcw className="h-3 w-3" /> Espera</button>
+            )}
+            <button onClick={() => { if (confirm('Eliminar?')) onDelete(pickup.id); }} className="flex items-center gap-1 text-[10px] font-bold px-3 py-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100"><Trash2 className="h-3 w-3" /> Eliminar</button>
+            <input type="time" value={pickup.horarioReady || ''} onChange={e => onUpdate(pickup.id, { horarioReady: e.target.value || null })}
+              className="h-7 px-2 rounded-lg border border-blue-200 text-[10px] bg-blue-50/50 max-w-[100px]" title="Horario Ready" />
+            <div className="flex-1" />
+            <select value={pickup.choferAsignado || ''} onChange={e => onUpdate(pickup.id, { choferAsignado: e.target.value || null })} className="h-7 px-2 rounded-lg border border-zinc-200 text-[10px] bg-white max-w-[130px]">
+              <option value="">Sin chofer</option>{choferOptions.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

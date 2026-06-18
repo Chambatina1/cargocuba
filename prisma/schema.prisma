@@ -55,6 +55,9 @@ model DriverLocation {
   precioServicio String?
   direccionRecojo String?
   comunidad      String?
+  puntoPartidaLat  Float?    // Punto de partida del chofer (sede)
+  puntoPartidaLng  Float?
+  puntoPartidaDir  String?   // Direccion del punto de partida
   updatedAt      DateTime @updatedAt
 
   @@index([phone])
