@@ -702,6 +702,7 @@ export default function CargoCubaPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           phone: driverPhone.trim(),
+          nombre: driverName.trim() || 'Chofer',
           puntoPartidaLat: driverPPLat,
           puntoPartidaLng: driverPPLng,
           puntoPartidaDir: driverPPDir.trim() || null,
