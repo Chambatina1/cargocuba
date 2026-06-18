@@ -1398,31 +1398,24 @@ export default function CargoCubaPage() {
               {/* Location status bar */}
               <div className={`flex items-center gap-2.5 px-4 py-3 rounded-xl text-xs font-semibold ${form.lat !== 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
                 {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : form.lat !== 0 ? <Check className="h-5 h-5" /> : <MapPin className="h-4 w-4" />}
-                {locating ? 'Obteniendo GPS...' : form.lat !== 0 ? `Ubicacion lista (${distMilesFromBase(form.lat, form.lng).toFixed(1)} mi de la Base)` : 'Busca tu direccion o usa GPS'}
+                {locating ? 'Obteniendo GPS...' : form.lat !== 0 ? `Ubicacion lista (${distMilesFromBase(form.lat, form.lng).toFixed(1)} mi de la Base)` : 'Pon tu direccion abajo'}
               </div>
 
-              {/* ── Opcion 1: Tocar el Mapa (metodo principal) ── */}
-              <button onClick={() => { clientTapModeRef.current = true; setClientTapMode(true); setPanel('none'); toast.info('Toca el mapa donde quieres la recogida'); }}
-                className="w-full h-12 rounded-xl bg-gradient-to-r from-emerald-500 to-green-500 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-green-200 hover:from-emerald-600 hover:to-green-600 transition-all"
-                style={{ touchAction: 'manipulation' }}>
-                <MapPin className="h-5 w-5" /> Tocar el Mapa
-              </button>
-
-              {/* ── Opcion 2: Pegar enlace de Google Maps o escribir ── */}
+              {/* ── 1. DIRECCION EDITABLE (campo principal) ── */}
               <div>
-                <p className="text-[10px] text-zinc-500 font-semibold mb-1">O pega enlace de Google Maps / escribe direccion:</p>
+                <p className="text-[10px] text-zinc-500 font-semibold mb-1">Escribe tu direccion o pega un enlace de Google Maps:</p>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
                   <input
                     value={searchQuery}
                     onChange={e => handleSearchAddress(e.target.value)}
                     onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
-                    placeholder="Ej: 123 Main St, Orlando O pega link de Google Maps"
-                    className="w-full h-11 pl-10 pr-10 rounded-xl border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 bg-zinc-50"
+                    placeholder="123 Main St, Orlando  o  https://maps.google.com/..."
+                    className="w-full h-12 pl-10 pr-10 rounded-xl border-2 border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:border-emerald-400 bg-zinc-50 font-medium"
                   />
-                  {searching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 animate-spin" />}
+                  {searching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-500 animate-spin" />}
                   {!searching && searchQuery && (
-                    <button onClick={() => { setSearchQuery(''); setSuggestions([]); setShowSuggestions(false); }} className="absolute right-3 top-1/2 -translate-y-1/2"><X className="h-4 w-4 text-zinc-400 hover:text-zinc-600" /></button>
+                    <button onClick={() => { setSearchQuery(''); setSuggestions([]); setShowSuggestions(false); setForm(f => ({ ...f, lat: 0, lng: 0 })); if (previewMarkerRef.current) { previewMarkerRef.current.remove(); previewMarkerRef.current = null; } }} className="absolute right-3 top-1/2 -translate-y-1/2"><X className="h-4 w-4 text-zinc-400 hover:text-red-500" /></button>
                   )}
                 </div>
                 {showSuggestions && suggestions.length > 0 && (
@@ -1436,18 +1429,11 @@ export default function CargoCubaPage() {
                     ))}
                   </div>
                 )}
+                <p className="text-[9px] text-zinc-400 mt-1">Tip: Abre Google Maps, busca la direccion, comparte, copia enlace, pega aqui</p>
               </div>
 
-              {/* ── Opcion 3: GPS ── */}
-              <button onClick={getLocation} disabled={locating}
-                className="w-full h-10 rounded-xl border border-dashed border-zinc-300 text-xs font-semibold text-zinc-500 hover:bg-zinc-50 hover:border-zinc-400 flex items-center justify-center gap-2 disabled:opacity-50 transition-all"
-                style={{ touchAction: 'manipulation' }}>
-                <Crosshair className="h-3.5 w-3.5" />
-                {locating ? 'Obteniendo GPS...' : 'O usar mi ubicacion GPS'}
-              </button>
-
-              {/* Direccion editable (se llena automaticamente) */}
-              <input value={form.direccion} onChange={e => setForm(f => ({ ...f, direccion: e.target.value }))} placeholder="Direccion (se llena automatica o edita manualmente)" className="w-full h-11 px-4 rounded-xl border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 bg-zinc-50" />
+              {/* Direccion guardada (se llena auto, editable) */}
+              <input value={form.direccion} onChange={e => setForm(f => ({ ...f, direccion: e.target.value }))} placeholder="Direccion confirmada (se llena sola o edita)" className="w-full h-11 px-4 rounded-xl border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 bg-zinc-50" />
 
               <input value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} placeholder="Tu nombre *" className="w-full h-11 px-4 rounded-xl border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 bg-zinc-50" />
               <input value={form.telefono} onChange={e => setForm(f => ({ ...f, telefono: e.target.value }))} placeholder="Telefono" className="w-full h-11 px-4 rounded-xl border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 bg-zinc-50" />
@@ -1463,6 +1449,20 @@ export default function CargoCubaPage() {
               </div>
 
               <textarea value={form.notas} onChange={e => setForm(f => ({ ...f, notas: e.target.value }))} placeholder="Notas (tamano, instrucciones...)" rows={2} className="w-full px-4 py-3 rounded-xl border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 bg-zinc-50 resize-none" />
+
+              {/* Opciones alternativas */}
+              <div className="flex gap-2">
+                <button onClick={getLocation} disabled={locating}
+                  className="flex-1 h-9 rounded-lg border border-dashed border-zinc-300 text-[10px] font-semibold text-zinc-500 hover:bg-zinc-50 flex items-center justify-center gap-1 disabled:opacity-50"
+                  style={{ touchAction: 'manipulation' }}>
+                  <Crosshair className="h-3 w-3" /> {locating ? 'GPS...' : 'Mi GPS'}
+                </button>
+                <button onClick={() => { clientTapModeRef.current = true; setClientTapMode(true); setPanel('none'); toast.info('Toca el mapa donde quieres la recogida'); }}
+                  className="flex-1 h-9 rounded-lg border border-dashed border-zinc-300 text-[10px] font-semibold text-zinc-500 hover:bg-zinc-50 flex items-center justify-center gap-1"
+                  style={{ touchAction: 'manipulation' }}>
+                  <MapPin className="h-3 w-3" /> Tocar Mapa
+                </button>
+              </div>
 
               <button onClick={handleSubmit} disabled={submitting || form.lat === 0 || !form.nombre.trim()}
                 className="w-full bg-emerald-600 text-white py-3.5 rounded-xl font-bold text-sm hover:bg-emerald-700 disabled:opacity-40 transition-all flex items-center justify-center gap-2 shadow-lg"
@@ -1514,40 +1514,33 @@ export default function CargoCubaPage() {
                 </div>
 
                 {/* ─── PUNTO DE PARTIDA (SEDE) ─── */}
-                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-3 space-y-3">
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-3 space-y-2.5">
                   <p className="text-[11px] font-bold text-blue-800 flex items-center gap-1.5">
                     <MapPin className="h-4 w-4 text-blue-600" />
                     Tu Punto de Partida (Sede)
                   </p>
 
-                  {/* 1. TOCAR EL MAPA — metodo principal */}
-                  <button onClick={startPpTapMode} className={`w-full h-12 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md ${ppTapMode ? 'bg-orange-500 text-white animate-pulse shadow-orange-300' : 'bg-gradient-to-r from-emerald-500 to-green-500 text-white hover:from-emerald-600 hover:to-green-600 shadow-green-200'}`} style={{ touchAction: 'manipulation' }}>
-                    {ppTapMode ? <><MapPin className="h-5 w-5 animate-bounce" /> Toca el mapa ahora...</> : <><MapPin className="h-5 w-5" /> Tocar el Mapa</>}
-                  </button>
-
-                  {/* 2. PEGAR ENLACE DE GOOGLE MAPS */}
+                  {/* 1. DIRECCION / GOOGLE MAPS LINK (campo principal) */}
                   <div>
-                    <p className="text-[9px] text-blue-500 font-semibold mb-1">O pega un enlace de Google Maps:</p>
+                    <p className="text-[10px] text-blue-500 font-semibold mb-1">Escribe la direccion o pega enlace de Google Maps:</p>
                     <div className="flex gap-1.5">
                       <input
                         value={ppSearchQuery}
                         onChange={e => {
                           setPpSearchQuery(e.target.value);
-                          // Auto-detectar enlace de Google Maps al pegar
                           const v = e.target.value;
                           const coords = extractGoogleMapsCoords(v);
                           if (coords) {
                             setDriverPPLat(coords.lat); setDriverPPLng(coords.lng);
-                            toast.success('Coordenadas extraidas del enlace de Google Maps');
+                            toast.success('Coordenadas extraidas del enlace');
                           }
                         }}
-                        placeholder="Pega enlace de Google Maps aqui..."
-                        className="flex-1 h-10 px-3 rounded-lg border border-blue-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"
+                        placeholder="456 Pine St, Orlando  o  https://maps.google.com/..."
+                        className="flex-1 h-11 px-3 rounded-lg border-2 border-blue-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400 bg-white font-medium"
                       />
                       <button onClick={async () => {
                         const v = ppSearchQuery.trim();
                         if (!v) return;
-                        // Intentar extraer coordenadas de Google Maps
                         const coords = extractGoogleMapsCoords(v);
                         if (coords) {
                           setDriverPPLat(coords.lat); setDriverPPLng(coords.lng);
@@ -1561,27 +1554,29 @@ export default function CargoCubaPage() {
                           const dir = await reverseGeocode(coords.lat, coords.lng);
                           const short = dir ? dir.split(',').slice(0, 3).join(',') : 'Punto de Google Maps';
                           setDriverPPDir(short); setPpSearchQuery(short);
-                          toast.success('Punto de partida puesto desde Google Maps');
+                          toast.success('Punto de partida puesto');
                         } else {
-                          // Si no es enlace, buscar con Nominatim
                           const results = await forwardGeocode(v);
-                          if (results.length > 0) {
-                            selectPPSuggestion(results[0]);
-                          } else {
-                            toast.error('No se encontro. Intenta: abre Google Maps, busca tu direccion, copia el enlace y pegalo aqui.');
-                          }
+                          if (results.length > 0) { selectPPSuggestion(results[0]); }
+                          else { toast.error('No encontrado. Abre Google Maps > comparte > copia enlace > pega aqui.'); }
                         }
                       }}
-                      className="h-10 px-3 rounded-lg bg-blue-500 text-white text-xs font-bold hover:bg-blue-600 flex-shrink-0" style={{ touchAction: 'manipulation' }}>
+                      className="h-11 px-4 rounded-lg bg-blue-500 text-white text-xs font-bold hover:bg-blue-600 flex-shrink-0" style={{ touchAction: 'manipulation' }}>
                         <Search className="h-4 w-4" />
                       </button>
                     </div>
+                    <p className="text-[9px] text-blue-400 mt-1">Google Maps, busca direccion, comparte, copia enlace, pega aqui</p>
                   </div>
 
-                  {/* 3. GPS ACTUAL */}
-                  <button onClick={setPPFromGPS} className="w-full h-9 rounded-lg border border-dashed border-blue-300 text-[10px] font-semibold text-blue-600 hover:bg-blue-50 flex items-center justify-center gap-1.5">
-                    <Crosshair className="h-3.5 w-3.5" /> O usar mi GPS actual
-                  </button>
+                  {/* 2. OPCIONES PEQUEÑAS: GPS + Tocar Mapa */}
+                  <div className="flex gap-2">
+                    <button onClick={setPPFromGPS} className="flex-1 h-9 rounded-lg border border-dashed border-blue-300 text-[10px] font-semibold text-blue-600 hover:bg-blue-50 flex items-center justify-center gap-1.5">
+                      <Crosshair className="h-3.5 w-3.5" /> Mi GPS
+                    </button>
+                    <button onClick={startPpTapMode} className="flex-1 h-9 rounded-lg border border-dashed border-blue-300 text-[10px] font-semibold text-blue-600 hover:bg-blue-50 flex items-center justify-center gap-1.5">
+                      <MapPin className="h-3.5 w-3.5" /> Tocar Mapa
+                    </button>
+                  </div>
 
                   {/* Punto seleccionado + Guardar */}
                   {driverPPLat && driverPPLng && (
