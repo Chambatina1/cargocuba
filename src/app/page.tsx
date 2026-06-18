@@ -694,6 +694,8 @@ export default function CargoCubaPage() {
     if (!mapInstRef.current) { toast.error('El mapa no esta listo'); return; }
     ppTapModeRef.current = true;
     setPpTapMode(true);
+    // Cerrar panel para que el mapa quede visible
+    setPanel('none');
     toast.info('Toca un punto en el mapa para poner tu sede');
   }, []);
 
@@ -1045,11 +1047,46 @@ export default function CargoCubaPage() {
         {ppTapMode && (
           <motion.div
             initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
-            className="absolute top-14 left-1/2 -translate-x-1/2 z-[1005] bg-orange-500 text-white px-5 py-2.5 rounded-2xl shadow-2xl font-bold text-xs flex items-center gap-2"
+            className="absolute top-14 left-2 right-2 z-[1005] bg-orange-500 text-white px-4 py-3 rounded-2xl shadow-2xl"
           >
-            <MapPin className="h-4 w-4 animate-bounce" />
-            Toca el mapa donde esta tu sede
-            <button onClick={() => setPpTapMode(false)} className="ml-2 bg-white/20 rounded-full p-0.5"><X className="h-3 w-3" /></button>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <MapPin className="h-5 w-5 animate-bounce" />
+                <span className="font-bold text-sm">Toca el mapa donde esta tu sede</span>
+              </div>
+              <button onClick={() => { ppTapModeRef.current = false; setPpTapMode(false); }} className="bg-white/20 rounded-full p-1.5"><X className="h-4 w-4" /></button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ═══ FLOTANTE: Punto seleccionado - Guardar sin abrir panel ═══ */}
+      <AnimatePresence>
+        {driverPPLat && driverPPLng && !ppTapMode && panel === 'none' && (
+          <motion.div
+            initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 40 }}
+            className="absolute bottom-20 left-2 right-2 z-[1005] bg-white rounded-2xl shadow-2xl border border-blue-200 p-3 space-y-2"
+          >
+            <div className="flex items-start gap-2">
+              <Check className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-zinc-800">Punto de partida listo</p>
+                <p className="text-[11px] text-zinc-500 truncate">{driverPPDir || `${driverPPLat.toFixed(4)}, ${driverPPLng.toFixed(4)}`}</p>
+              </div>
+              <button onClick={() => { setDriverPPLat(null); setDriverPPLng(null); setDriverPPDir(''); setPpSearchQuery(''); if (ppPreviewRef.current) { ppPreviewRef.current.remove(); ppPreviewRef.current = null; } }} className="text-zinc-400 hover:text-red-500 flex-shrink-0"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={savePuntoPartida} disabled={ppSaving || !driverPhone.trim()}
+                className="flex-1 h-11 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold text-sm hover:from-blue-600 hover:to-indigo-600 disabled:opacity-40 transition-all flex items-center justify-center gap-2 shadow-lg"
+                style={{ touchAction: 'manipulation' }}>
+                {ppSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Check className="h-4 w-4" /> Guardar</>}
+              </button>
+              <button onClick={() => { ppTapModeRef.current = true; setPpTapMode(true); }}
+                className="h-11 px-4 rounded-xl border-2 border-orange-300 text-orange-600 font-bold text-xs hover:bg-orange-50 transition-all flex items-center justify-center gap-1.5"
+                style={{ touchAction: 'manipulation' }}>
+                <MapPin className="h-4 w-4" /> Cambiar
+              </button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
