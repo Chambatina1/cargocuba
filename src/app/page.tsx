@@ -124,6 +124,30 @@ function cleanAddress(raw: string): string {
   return clean || raw; // fallback to raw if empty after cleaning
 }
 
+// ─── US Census Geocoding (excellent US address coverage) ──────────────
+async function censusGeocode(query: string): Promise<GeoSuggestion | null> {
+  try {
+    const r = await fetch(`https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?address=${encodeURIComponent(query)}&benchmark=2020&format=json`);
+    const j = await r.json();
+    const matches = j?.result?.addressMatches;
+    if (matches && matches.length > 0) {
+      const m = matches[0];
+      const coords = m.coordinates;
+      const addr = m.addressComponents;
+      const display = [
+        addr.streetName ? `${addr.fromAddress || ''} ${addr.streetName} ${addr.suffixType || addr.preType || ''}`.trim() : '',
+        addr.city || '', addr.state || '', addr.zip || ''
+      ].filter(Boolean).join(', ');
+      return {
+        display_name: cleanAddress(display || query),
+        lat: String(coords.y),
+        lon: String(coords.x)
+      };
+    }
+    return null;
+  } catch { return null; }
+}
+
 // ─── Forward Geocode (Nominatim) with multi-strategy fallback ─────────
 async function nominatimSearch(query: string, opts?: { viewbox?: string; bounded?: number }): Promise<GeoSuggestion[]> {
   try {
@@ -140,7 +164,11 @@ async function nominatimSearch(query: string, opts?: { viewbox?: string; bounded
 }
 
 async function forwardGeocode(query: string): Promise<GeoSuggestion[]> {
-  // Strategy 1: Direct search
+  // Strategy 0: US Census API first (best for US addresses)
+  const censusResult = await censusGeocode(query);
+  if (censusResult) return [censusResult];
+
+  // Strategy 1: Direct Nominatim search
   let results = await nominatimSearch(query);
   if (results.length > 0) return results;
 
