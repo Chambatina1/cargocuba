@@ -50,7 +50,6 @@ export async function GET() {
   try {
     await ensureDriverTable();
     const drivers = await prisma.driverLocation.findMany({
-      where: { activo: true },
       orderBy: { updatedAt: 'desc' },
     });
     return NextResponse.json({ ok: true, data: drivers });
@@ -120,15 +119,24 @@ export async function PUT(req: NextRequest) {
     if (puntoPartidaLng != null) updateData.puntoPartidaLng = puntoPartidaLng;
     if (puntoPartidaDir !== undefined) updateData.puntoPartidaDir = puntoPartidaDir;
 
+    // If creating new driver (no lat/lng sent), use puntoPartida as fallback
+    const createLat = lat != null ? lat : (puntoPartidaLat || 0);
+    const createLng = lng != null ? lng : (puntoPartidaLng || 0);
+    // Also ensure puntoPartida fields are always in updateData
+    if (puntoPartidaLat != null) updateData.puntoPartidaLat = puntoPartidaLat;
+    if (puntoPartidaLng != null) updateData.puntoPartidaLng = puntoPartidaLng;
+    if (puntoPartidaDir !== undefined) updateData.puntoPartidaDir = puntoPartidaDir;
+    if (nombre) updateData.nombre = nombre;
+
     const driver = await prisma.driverLocation.upsert({
       where: { phone },
       update: updateData,
       create: {
         phone,
         nombre: nombre || 'Chofer',
-        lat: lat || 0,
-        lng: lng || 0,
-        activo: activo !== undefined ? activo : false,
+        lat: createLat,
+        lng: createLng,
+        activo: activo !== undefined ? activo : true,
         puntoPartidaLat: puntoPartidaLat ?? null,
         puntoPartidaLng: puntoPartidaLng ?? null,
         puntoPartidaDir: puntoPartidaDir || null,
