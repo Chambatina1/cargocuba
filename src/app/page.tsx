@@ -357,8 +357,9 @@ export default function CargoCubaPage() {
     if (driverAccuracyRef.current) { driverAccuracyRef.current.remove(); driverAccuracyRef.current = null; }
     selectLinesRef.current.forEach(l => l.remove()); selectLinesRef.current = [];
 
-    // Clear preview marker if exists
-    if (previewMarkerRef.current) { previewMarkerRef.current.remove(); previewMarkerRef.current = null; }
+    // Do NOT clear preview markers here — they belong to the user and should
+    // survive data refreshes (every 4s). Only the user should remove them.
+    // previewMarkerRef = client address pin, ppPreviewRef = driver PP pin
 
     const active = pickups.filter(p => p.estado !== 'cancelado');
     const displayList = optimizedRoute.length > 0 && panel === 'admin' ? optimizedRoute : active;
@@ -504,7 +505,7 @@ export default function CargoCubaPage() {
 
     // Only auto-fit if NOT following a driver AND user hasn't placed a preview pin
     // (don't steal the map from the user who is selecting an address)
-    const hasPreview = previewMarkerRef.current !== null;
+    const hasPreview = previewMarkerRef.current !== null || ppPreviewRef.current !== null;
     if (!followingDriver && !hasPreview) {
       if (bounds.length > 1) {
         mapInstRef.current.fitBounds(bounds, { padding: [60, 60], maxZoom: 13 });
