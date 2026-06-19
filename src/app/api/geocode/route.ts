@@ -15,6 +15,24 @@ function cleanAddress(raw: string): string {
   return clean || raw;
 }
 
+// ─── Translate Spanish address terms to English (for Census API) ──────
+function spanishToEnglish(raw: string): string {
+  let q = raw;
+  const map: [RegExp, string][] = [
+    [/\bcalle\b/i, 'street'], [/\bavenida\b/i, 'avenue'], [/\bave\b/i, 'avenue'],
+    [/\bboulevard\b/i, 'blvd'], [/\bblvd\b/i, 'blvd'],[/\bcarretera\b/i, 'highway'],
+    [/\bautopista\b/i, 'expressway'], [/\bnoroeste\b/i, 'northwest'], [/\bnoreste\b/i, 'northeast'],
+    [/\bsuroeste\b/i, 'southwest'], [/\bsureste\b/i, 'southeast'],[/\bnorte\b/i, 'north'],
+    [/\bsur\b/i, 'south'], [/\beste\b/i, 'east'], [/\boeste\b/i, 'west'],
+    [/\bnw\b/i, 'nw'], [/\bne\b/i, 'ne'], [/\bsw\b/i, 'sw'], [/\bse\b/i, 'se'],
+    [/\bn\.?\s*e\.?\s*/i, 'NE '], [/\bn\.?\s*o\.?\s*/i, 'NO '],
+  ];
+  for (const [pattern, replacement] of map) {
+    q = q.replace(pattern, replacement);
+  }
+  return q;
+}
+
 // ─── 1. US Census Geocoding (best US address coverage) ─────────────────
 async function censusGeocode(query: string): Promise<GeoResult[]> {
   try {
@@ -67,7 +85,7 @@ async function nominatimSearch(query: string): Promise<GeoResult[]> {
 // ─── 3. Photon (Komoot - excellent address search) ─────────────────────
 async function photonSearch(query: string): Promise<GeoResult[]> {
   try {
-    const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=5&lang=en`;
+    const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=5&lang=es`;
     const r = await fetch(url, { signal: AbortSignal.timeout(4000) });
     const j = await r.json();
     if (!j?.features) return [];
@@ -169,17 +187,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ results: [] });
   }
 
+  // Also try English-translated version for Census
+  const qEn = spanishToEnglish(q);
+
   // Run ALL sources in parallel for maximum speed
-  const [census, nomDirect, photon, nomFL, nomCU] = await Promise.all([
+  const [census, censusEn, nomDirect, photon, photonFL, nomFL, nomCU] = await Promise.all([
     censusGeocode(q),
+    q !== qEn ? censusGeocode(qEn) : Promise.resolve([]),
     nominatimSearch(q),
     photonSearch(q),
+    photonSearch(q + ', Florida'),
     nominatimFlorida(q),
     nominatimCuba(q),
   ]);
 
   // Combine: Census first (most precise for US), then others
-  const all = [...census, ...photon, ...nomDirect, ...nomFL, ...nomCU];
+  const all = [...census, ...censusEn, ...photonFL, ...photon, ...nomDirect, ...nomFL, ...nomCU];
   const deduped = dedupe(all);
 
   // Sort: census results first, then by source quality
