@@ -397,7 +397,7 @@ export default function CargoCubaPage() {
     const next = !distRefMode;
     setDistRefMode(next);
     if (!next) { setDistRefPoint(null); if (distRefMarkerRef.current) { distRefMarkerRef.current.remove(); distRefMarkerRef.current = null; } }
-    else { setSelectMode(false); setSelectedIds([]); setSelectRouteData(null); }
+    else { setSelectMode(false); setSelectedIds([]); setSelectRouteData(null); setPanel('none'); }
   }, [distRefMode]);
 
   const handleDistRefTap = useCallback((pickup: { id: number; nombre: string; lat: number; lng: number }) => {
@@ -1043,7 +1043,7 @@ export default function CargoCubaPage() {
     } catch {}
   };
 
-  // ─── Auto-recalculate distance matrix when reference point changes ───
+  // ─── Distance matrix computation ───
   const computeDistMatrix = useCallback((originLat: number, originLng: number, originName: string) => {
     const active = pickups.filter(p => p.estado !== 'cancelado');
     if (active.length < 1) return [];
@@ -1058,17 +1058,23 @@ export default function CargoCubaPage() {
     return matrix;
   }, [pickups]);
 
-  // Auto-compute distances when effectiveRef changes (especially when distRefPoint is set)
+  // Ref to always have latest computeDistMatrix accessible from any callback
+  const computeDistRef = useRef(computeDistMatrix);
+  computeDistRef.current = computeDistMatrix;
+
+  // Auto-compute distances when reference point changes
   useEffect(() => {
     if (distRefPoint) {
       const active = pickups.filter(p => p.estado !== 'cancelado');
       if (active.length >= 1) {
-        setDistMatrix(computeDistMatrix(effectiveRef.lat, effectiveRef.lng, effectiveRef.name));
+        const matrix = computeDistRef.current(effectiveRef.lat, effectiveRef.lng, effectiveRef.name);
+        setDistMatrix(matrix);
         setAdminTab('distancias');
+        setPanel('admin'); // Open admin panel to show distances
       }
     } else if (distMatrix.length > 0) {
-      // Recompute when switching back to driver/base reference
-      setDistMatrix(computeDistMatrix(effectiveRef.lat, effectiveRef.lng, effectiveRef.name));
+      const matrix = computeDistRef.current(effectiveRef.lat, effectiveRef.lng, effectiveRef.name);
+      setDistMatrix(matrix);
     }
   }, [effectiveRef.lat, effectiveRef.lng, effectiveRef.name]);
 
