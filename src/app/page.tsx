@@ -123,15 +123,23 @@ function optimizeOrder(pickups: Pickup[], startLat = BASE_LAT, startLng = BASE_L
 // All geocoding goes through our API route to avoid CORS and maximize coverage.
 // The server queries US Census (best US addresses), Photon (Komoot), and
 // Nominatim (OSM) in parallel — like having Google Maps quality.
+const geocodeCache = new Map<string, { results: GeoSuggestion[]; ts: number }>();
+const GEOCODE_TTL = 30 * 60 * 1000; // 30 min
+
 async function forwardGeocode(query: string): Promise<GeoSuggestion[]> {
+  const key = query.toLowerCase().trim();
+  const cached = geocodeCache.get(key);
+  if (cached && Date.now() - cached.ts < GEOCODE_TTL) return cached.results;
   try {
     const r = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`);
     const j = await r.json();
-    return (j.results || []).map((s: { display_name: string; lat: string; lon: string }) => ({
+    const results: GeoSuggestion[] = (j.results || []).map((s: { display_name: string; lat: string; lon: string }) => ({
       display_name: s.display_name,
       lat: s.lat,
       lon: s.lon
     }));
+    if (results.length > 0) geocodeCache.set(key, { results, ts: Date.now() });
+    return results;
   } catch { return []; }
 }
 
@@ -156,21 +164,38 @@ function pinSVG(color: string, num?: number, pulse?: boolean) {
 // ─── Extract coords from Google Maps link ────────────────────────────────
 function extractGoogleMapsCoords(text: string): { lat: number; lng: number } | null {
   try {
-    let m = text.match(/@(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)/);
+    // Apple Maps: maps.apple.com/?ll=28.6,-81.3 or ?daddr=28.6,-81.3
+    let m = text.match(/maps\.apple\.com\/.*[?&]ll=(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)/);
     if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+    // Waze: waze.com/ul?ll=28.6,-81.3
+    m = text.match(/waze\.com\/ul\?.*ll=(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)/);
+    if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+    // Google Maps: @28.6,-81.3
+    m = text.match(/@(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)/);
+    if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+    // Google Maps: !3d28.6!4d-81.3
     m = text.match(/!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/);
     if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+    // Google Maps: /@28.6,-81.3
     m = text.match(/\/@(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)/);
     if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+    // Google Maps: query=28.6,-81.3
     m = text.match(/query=(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)/);
     if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+    // Generic: ll=28.6,-81.3
     m = text.match(/ll=(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)/);
     if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+    // Plain coords: 28.6,-81.3
     m = text.match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
     if (m && parseFloat(m[1]) >= -90 && parseFloat(m[1]) <= 90) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
   } catch {}
   return null;
 }
+
+// ─── Navigation URLs ───────────────────────────────────────────────────────
+function navGoogleMaps(lat: number, lng: number) { return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`; }
+function navWaze(lat: number, lng: number) { return `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`; }
+function navAppleMaps(lat: number, lng: number) { return `https://maps.apple.com/?daddr=${lat},${lng}`; }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MAIN PAGE
@@ -257,6 +282,12 @@ export default function CargoCubaPage() {
   const [calculatingDist, setCalculatingDist] = useState(false);
   const [scheduledDriver, setScheduledDriver] = useState('');
   const [scheduling, setScheduling] = useState(false);
+  // Admin search & filter
+  const [adminSearch, setAdminSearch] = useState('');
+  const [adminEstadoFilter, setAdminEstadoFilter] = useState<'' | 'esperando' | 'recogido'>('');
+  // Admin batch selection
+  const [adminSelectedIds, setAdminSelectedIds] = useState<Set<number>>(new Set());
+  const [adminBatchChofer, setAdminBatchChofer] = useState('');
 
   // ─── Grupos por Chofer (puntos de partida) ───
   const [driverRoutes, setDriverRoutes] = useState<Map<string, { route: Pickup[]; data: { route: [number, number][]; totalDistance: number; totalDuration: number; legs: { duration: number; distance: number }[] } | null }>>(new Map());
@@ -1082,6 +1113,21 @@ export default function CargoCubaPage() {
       })()
     : [];
 
+  // ─── Admin filtered pickups (search + estado filter) ───
+  const adminFilteredPickups = (() => {
+    let list = adminChofer ? pickups.filter(p => p.choferAsignado === adminChofer) : pickups;
+    if (adminEstadoFilter) list = list.filter(p => p.estado === adminEstadoFilter);
+    if (adminSearch.trim()) {
+      const q = adminSearch.toLowerCase().trim();
+      list = list.filter(p =>
+        p.nombre.toLowerCase().includes(q) ||
+        p.direccion.toLowerCase().includes(q) ||
+        (p.telefono && p.telefono.includes(q))
+      );
+    }
+    return list;
+  })();
+
   // ─── Chofer options from DB (all unique driver names + any assigned names) ───
   const choferOptions = [...new Set([
     ...drivers.map(d => d.nombre),
@@ -1092,6 +1138,40 @@ export default function CargoCubaPage() {
   const esperandoCount = pickups.filter(p => p.estado === 'esperando').length;
   const recogidosCount = pickups.filter(p => p.estado === 'recogido').length;
   const activeDriversCount = drivers.filter(d => d.activo).length;
+
+  // ─── Admin batch actions ───
+  const toggleAdminSelect = useCallback((id: number, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setAdminSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+  const adminSelectAll = useCallback(() => {
+    const all = adminFilteredPickups.map(p => p.id);
+    if (adminSelectedIds.size === all.length && all.length > 0) setAdminSelectedIds(new Set());
+    else setAdminSelectedIds(new Set(all));
+  }, [adminFilteredPickups, adminSelectedIds]);
+  const handleBatchUpdate = useCallback(async (data: any) => {
+    if (adminSelectedIds.size === 0) { toast.error('Selecciona al menos uno'); return; }
+    let ok = 0;
+    for (const id of adminSelectedIds) {
+      try { const r = await fetch('/api/pickups', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, ...data }) }); const j = await r.json(); if (j.ok) ok++; } catch {}
+    }
+    toast.success(`${ok} actualizado${ok !== 1 ? 's' : ''}`);
+    setAdminSelectedIds(new Set()); load();
+  }, [adminSelectedIds, load]);
+  const handleBatchDelete = useCallback(async () => {
+    if (adminSelectedIds.size === 0) return;
+    if (!confirm(`Eliminar ${adminSelectedIds.size} recogida${adminSelectedIds.size > 1 ? 's' : ''}?`)) return;
+    let ok = 0;
+    for (const id of adminSelectedIds) {
+      try { const r = await fetch(`/api/pickups?id=${id}`, { method: 'DELETE' }); const j = await r.json(); if (j.ok) ok++; } catch {}
+    }
+    toast.success(`${ok} eliminada${ok !== 1 ? 's' : ''}`);
+    setAdminSelectedIds(new Set()); load();
+  }, [adminSelectedIds, load]);
 
   // ─── Grupos por chofer (computado) ───
   const choferesConAsignados = (() => {
@@ -1519,7 +1599,7 @@ export default function CargoCubaPage() {
                       onChange={e => handleSearchAddress(e.target.value)}
                       onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleClientSearchNow(); } }}
-                      placeholder="Ej: 8310 Lost Lake Dr, Orlando FL..."
+                      placeholder="Direccion o pega enlace de Google Maps, Waze, Safari..."
                       className="w-full h-12 pl-10 pr-10 rounded-xl border-2 border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:border-emerald-400 bg-zinc-50 font-medium"
                       autoComplete="off"
                     />
@@ -1892,18 +1972,58 @@ export default function CargoCubaPage() {
 
             {/* Action bar for lista tab */}
             {adminTab === 'lista' && (
-              <div className="px-4 py-2 border-b border-zinc-100 flex items-center gap-2 bg-white/80 flex-shrink-0">
-                <button onClick={handleOptimize} disabled={optimizing || esperandoCount < 1}
-                  className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 hover:bg-emerald-700 disabled:opacity-40"
-                  style={{ touchAction: 'manipulation' }}>
-                  {optimizing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}{optimizing ? '...' : 'Optimizar'}
-                </button>
-                <button onClick={handleCalcDistances} disabled={calculatingDist || pickups.filter(p => p.estado !== 'cancelado').length < 2}
-                  className="bg-orange-500 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 hover:bg-orange-600 disabled:opacity-40"
-                  style={{ touchAction: 'manipulation' }}>
-                  {calculating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Route className="h-3 w-3" />}{calculating ? '...' : 'Distancias'}
-                </button>
-                {optimizedRoute.length > 0 && <button onClick={() => { setOptimizedRoute([]); setRouteData(null); }} className="w-7 h-7 rounded-lg border border-zinc-200 flex items-center justify-center text-zinc-400"><RotateCcw className="h-3 w-3" /></button>}
+              <div className="px-4 py-2 border-b border-zinc-100 flex-shrink-0 space-y-2">
+                {/* Search + filter row */}
+                <div className="flex items-center gap-1.5">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-zinc-400" />
+                    <input value={adminSearch} onChange={e => { setAdminSearch(e.target.value); setAdminSelectedIds(new Set()); }}
+                      placeholder="Buscar nombre, direccion, telefono..."
+                      className="w-full h-7 pl-7 pr-7 rounded-lg border border-zinc-200 text-[10px] focus:outline-none focus:ring-1 focus:ring-blue-300 bg-white" />
+                    {adminSearch && <button onClick={() => setAdminSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2"><X className="h-3 w-3 text-zinc-400" /></button>}
+                  </div>
+                  <select value={adminEstadoFilter} onChange={e => { setAdminEstadoFilter(e.target.value as '' | 'esperando' | 'recogido'); setAdminSelectedIds(new Set()); }}
+                    className="h-7 px-2 rounded-lg border border-zinc-200 text-[10px] bg-white">
+                    <option value="">Todos</option>
+                    <option value="esperando">Esperando</option>
+                    <option value="recogido">Recogidos</option>
+                  </select>
+                </div>
+                {/* Batch actions bar */}
+                {adminSelectedIds.size > 0 && (
+                  <div className="flex items-center gap-1.5 bg-blue-50 rounded-lg px-2.5 py-1.5">
+                    <span className="text-[10px] font-bold text-blue-700">{adminSelectedIds.size} seleccionado{adminSelectedIds.size > 1 ? 's' : ''}</span>
+                    <div className="flex-1" />
+                    <button onClick={adminSelectAll} className="text-[9px] font-bold px-2 py-1 rounded bg-zinc-200 text-zinc-600 hover:bg-zinc-300">Todos</button>
+                    <select value={adminBatchChofer} onChange={e => setAdminBatchChofer(e.target.value)} className="h-6 px-1.5 rounded border border-zinc-300 text-[9px] bg-white max-w-[80px]">
+                      <option value="">Chofer...</option>{choferOptions.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    {adminBatchChofer && <button onClick={() => { handleBatchUpdate({ choferAsignado: adminBatchChofer }); setAdminBatchChofer(''); }} className="text-[9px] font-bold px-2 py-1 rounded bg-blue-500 text-white hover:bg-blue-600">Asignar</button>}
+                    <button onClick={() => handleBatchUpdate({ estado: 'recogido', fechaRecogida: new Date().toISOString() })} className="text-[9px] font-bold px-2 py-1 rounded bg-purple-100 text-purple-700 hover:bg-purple-200">Recogido</button>
+                    <button onClick={handleBatchDelete} className="text-[9px] font-bold px-2 py-1 rounded bg-red-100 text-red-500 hover:bg-red-200">Eliminar</button>
+                    <button onClick={() => setAdminSelectedIds(new Set())} className="text-[9px] font-bold px-1.5 py-1 rounded bg-zinc-200 text-zinc-500">X</button>
+                  </div>
+                )}
+                {/* Action buttons */}
+                <div className="flex items-center gap-1.5">
+                  <button onClick={adminSelectAll}
+                    className="text-[9px] font-bold px-2 py-1.5 rounded-lg border border-zinc-200 text-zinc-500 hover:bg-zinc-50 flex items-center gap-1">
+                    {adminSelectedIds.size === adminFilteredPickups.length && adminFilteredPickups.length > 0 ? <Check className="h-3 w-3" /> : null} Seleccionar
+                  </button>
+                  <button onClick={handleOptimize} disabled={optimizing || esperandoCount < 1}
+                    className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 hover:bg-emerald-700 disabled:opacity-40"
+                    style={{ touchAction: 'manipulation' }}>
+                    {optimizing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}{optimizing ? '...' : 'Optimizar'}
+                  </button>
+                  <button onClick={handleCalcDistances} disabled={calculatingDist || pickups.filter(p => p.estado !== 'cancelado').length < 2}
+                    className="bg-orange-500 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 hover:bg-orange-600 disabled:opacity-40"
+                    style={{ touchAction: 'manipulation' }}>
+                    {calculating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Route className="h-3 w-3" />}{calculating ? '...' : 'Distancias'}
+                  </button>
+                  {optimizedRoute.length > 0 && <button onClick={() => { setOptimizedRoute([]); setRouteData(null); }} className="w-7 h-7 rounded-lg border border-zinc-200 flex items-center justify-center text-zinc-400"><RotateCcw className="h-3 w-3" /></button>}
+                  <div className="flex-1" />
+                  <span className="text-[9px] text-zinc-400">{adminFilteredPickups.length} de {pickups.length}</span>
+                </div>
               </div>
             )}
 
@@ -1932,11 +2052,12 @@ export default function CargoCubaPage() {
             {adminTab === 'lista' && (
             <div className="flex-1 overflow-y-auto divide-y divide-zinc-50">
               {loading ? <div className="flex items-center justify-center h-20"><Loader2 className="h-5 w-5 text-zinc-300 animate-spin" /></div> :
-              (adminChofer ? pickups.filter(p => p.choferAsignado === adminChofer) : pickups).length === 0 ? <div className="p-8 text-center"><Users className="h-7 w-7 text-zinc-300 mx-auto mb-2" /><p className="text-xs text-zinc-400">Sin solicitudes</p></div> :
-              (optimizedRoute.length > 0 ? optimizedRoute : (adminChofer ? pickups.filter(p => p.choferAsignado === adminChofer) : pickups)).map(p => (
-                <AdminCard key={p.id} pickup={p} onUpdate={updatePickup} onDelete={deletePickup}
+              adminFilteredPickups.length === 0 ? <div className="p-8 text-center"><Users className="h-7 w-7 text-zinc-300 mx-auto mb-2" /><p className="text-xs text-zinc-400">{adminSearch || adminEstadoFilter ? 'Sin resultados para este filtro' : 'Sin solicitudes'}</p></div> :
+              (optimizedRoute.length > 0 ? optimizedRoute : adminFilteredPickups).map(p => (
+                <AdminCard key={p.id} pickup={p} allPickups={pickups.filter(pp => pp.estado !== 'cancelado' && pp.id !== p.id)} onUpdate={updatePickup} onDelete={deletePickup}
                   routeIdx={optimizedRoute.indexOf(p)} showRouteNum={optimizedRoute.length > 0}
-                  leg={routeData?.legs[optimizedRoute.indexOf(p) + 1]} choferOptions={choferOptions} />
+                  leg={routeData?.legs[optimizedRoute.indexOf(p) + 1]} choferOptions={choferOptions}
+                  isSelected={adminSelectedIds.has(p.id)} onToggleSelect={(e) => toggleAdminSelect(p.id, e)} />
               ))}
             </div>
             )}
@@ -2273,38 +2394,77 @@ export default function CargoCubaPage() {
 // ADMIN CARD
 // ═══════════════════════════════════════════════════════════════════════════
 
-function AdminCard({ pickup, onUpdate, onDelete, routeIdx, showRouteNum, leg, choferOptions }: {
-  pickup: Pickup; onUpdate: (id: number, data: any) => void; onDelete: (id: number) => void;
+function AdminCard({ pickup, allPickups, onUpdate, onDelete, routeIdx, showRouteNum, leg, choferOptions, isSelected, onToggleSelect }: {
+  pickup: Pickup; allPickups: Pickup[]; onUpdate: (id: number, data: any) => void; onDelete: (id: number) => void;
   routeIdx: number; showRouteNum: boolean; leg?: { duration: number; distance: number };
-  choferOptions: string[];
+  choferOptions: string[]; isSelected?: boolean; onToggleSelect?: (e?: React.MouseEvent) => void;
 }) {
   const isEsp = pickup.estado === 'esperando';
   const [expanded, setExpanded] = useState(false);
+  const [showDistances, setShowDistances] = useState(false);
   const distMi = distMilesFromBase(pickup.lat, pickup.lng).toFixed(1);
+  // Distances from this pickup to all others, sorted nearest first
+  const distsToOthers = allPickups
+    .map(p => ({ ...p, dMi: haversine(pickup.lat, pickup.lng, p.lat, p.lng) * 0.621371 }))
+    .sort((a, b) => a.dMi - b.dMi);
   return (
-    <div style={isEsp ? { borderLeft: `3px solid ${VERDE}` } : pickup.estado === 'recogido' ? { borderLeft: `3px solid ${MORADO}` } : {}}>
-      <button onClick={() => setExpanded(!expanded)} className="w-full text-left px-3 py-2.5 flex items-center gap-2.5 hover:bg-zinc-50" style={{ touchAction: 'manipulation' }}>
-        {showRouteNum ? <div className="w-6 h-6 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">{routeIdx + 1}</div>
-          : <div className={`w-3 h-3 rounded-full flex-shrink-0 ${isEsp ? 'bg-emerald-500' : 'bg-purple-500'}`} />}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[12px] font-semibold text-zinc-800 truncate">{pickup.nombre}</span>
-            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isEsp ? 'bg-emerald-100 text-emerald-700' : 'bg-purple-100 text-purple-700'}`}>{isEsp ? 'ESPERA' : 'RECOGIDO'}</span>
-            {pickup.horarioReady && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" />{pickup.horarioReady}</span>}
+    <div style={isEsp ? { borderLeft: `3px solid ${VERDE}` } : pickup.estado === 'recogido' ? { borderLeft: `3px solid ${MORADO}` } : {}} className={isSelected ? 'bg-blue-50/60' : ''}>
+      <div className="flex items-center">
+        {/* Batch select checkbox */}
+        {onToggleSelect && (
+          <button onClick={onToggleSelect} className="ml-2 flex-shrink-0" style={{ touchAction: 'manipulation' }}>
+            <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${isSelected ? 'bg-blue-600 border-blue-600' : 'border-zinc-300 bg-white'}`}>
+              {isSelected && <Check className="h-3 w-3 text-white" />}
+            </div>
+          </button>
+        )}
+        <button onClick={() => setExpanded(!expanded)} className="flex-1 text-left px-3 py-2.5 flex items-center gap-2.5 hover:bg-zinc-50" style={{ touchAction: 'manipulation' }}>
+          {showRouteNum ? <div className="w-6 h-6 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">{routeIdx + 1}</div>
+            : <div className={`w-3 h-3 rounded-full flex-shrink-0 ${isEsp ? 'bg-emerald-500' : 'bg-purple-500'}`} />}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[12px] font-semibold text-zinc-800 truncate">{pickup.nombre}</span>
+              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isEsp ? 'bg-emerald-100 text-emerald-700' : 'bg-purple-100 text-purple-700'}`}>{isEsp ? 'ESPERA' : 'RECOGIDO'}</span>
+              {pickup.horarioReady && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" />{pickup.horarioReady}</span>}
+            </div>
+            <div className="flex items-center gap-2">
+              <p className="text-[10px] text-zinc-400 truncate">{pickup.direccion}</p>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <p className="text-[10px] text-zinc-400 truncate">{pickup.direccion}</p>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <span className="text-[9px] text-red-500 font-semibold">{distMi} mi</span>
+            {leg && leg.distance > 0 && <span className="text-[9px] text-blue-500 font-medium">{fmtDist(leg.distance)}</span>}
           </div>
-        </div>
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          <span className="text-[9px] text-red-500 font-semibold">{distMi} mi</span>
-          {leg && leg.distance > 0 && <span className="text-[9px] text-blue-500 font-medium">{fmtDist(leg.distance)}</span>}
-          {pickup.telefono && <a href={`tel:${pickup.telefono}`} onClick={e => e.stopPropagation()} className="w-6 h-6 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center"><Phone className="h-3 w-3" /></a>}
-          <ChevronRight className={`w-3.5 h-3.5 text-zinc-400 transition-transform ${expanded ? 'rotate-90' : ''}`} />
-        </div>
-      </button>
+          {/* Nav buttons (always visible) */}
+          <div className="flex items-center gap-0.5 flex-shrink-0">
+            <a href={navGoogleMaps(pickup.lat, pickup.lng)} target="_blank" rel="noopener" onClick={e => e.stopPropagation()}
+              className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-[8px] font-black" title="Google Maps">G</a>
+            <a href={navWaze(pickup.lat, pickup.lng)} target="_blank" rel="noopener" onClick={e => e.stopPropagation()}
+              className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[8px] font-black" title="Waze">W</a>
+            <a href={navAppleMaps(pickup.lat, pickup.lng)} target="_blank" rel="noopener" onClick={e => e.stopPropagation()}
+              className="w-6 h-6 rounded-full bg-zinc-800 text-white flex items-center justify-center text-[8px] font-black" title="Apple Maps/Safari">A</a>
+            {pickup.telefono && <a href={`tel:${pickup.telefono}`} onClick={e => e.stopPropagation()} className="w-6 h-6 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center"><Phone className="h-3 w-3" /></a>}
+          </div>
+          <ChevronRight className={`w-3.5 h-3.5 text-zinc-400 transition-transform flex-shrink-0 ${expanded ? 'rotate-90' : ''}`} />
+        </button>
+      </div>
       {expanded && (
         <div className="px-3 pb-3 pt-0 space-y-2.5">
+          {/* Navigation buttons (large) */}
+          <div className="flex gap-1.5">
+            <a href={navGoogleMaps(pickup.lat, pickup.lng)} target="_blank" rel="noopener"
+              className="flex-1 h-9 rounded-lg bg-blue-500 text-white text-[10px] font-bold flex items-center justify-center gap-1.5 hover:bg-blue-600">
+              <span className="text-xs">G</span> Google Maps
+            </a>
+            <a href={navWaze(pickup.lat, pickup.lng)} target="_blank" rel="noopener"
+              className="flex-1 h-9 rounded-lg bg-emerald-500 text-white text-[10px] font-bold flex items-center justify-center gap-1.5 hover:bg-emerald-600">
+              <span className="text-xs">W</span> Waze
+            </a>
+            <a href={navAppleMaps(pickup.lat, pickup.lng)} target="_blank" rel="noopener"
+              className="flex-1 h-9 rounded-lg bg-zinc-800 text-white text-[10px] font-bold flex items-center justify-center gap-1.5 hover:bg-zinc-900">
+              <span className="text-xs">A</span> Safari
+            </a>
+          </div>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px]">
             {pickup.telefono && <div><span className="text-zinc-400">Telefono:</span> <a href={`tel:${pickup.telefono}`} className="text-blue-600 font-medium">{pickup.telefono}</a></div>}
             {pickup.choferAsignado && <div><span className="text-zinc-400">Chofer:</span> <span className="text-zinc-700 font-medium">{pickup.choferAsignado}</span></div>}
@@ -2312,6 +2472,32 @@ function AdminCard({ pickup, onUpdate, onDelete, routeIdx, showRouteNum, leg, ch
             <div><span className="text-zinc-400">Creada:</span> <span className="text-zinc-600">{new Date(pickup.createdAt).toLocaleString('es', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span></div>
             {pickup.horarioReady && <div><span className="text-zinc-400">Horario Ready:</span> <span className="text-blue-600 font-bold">{pickup.horarioReady}</span></div>}
             {pickup.notas && <div className="col-span-2"><span className="text-zinc-400">Notas:</span> <span className="text-zinc-600">{pickup.notas}</span></div>}
+          </div>
+          {/* ─── DISTANCIAS A TODOS LOS DEMÁS CLIENTES ─── */}
+          <div>
+            <button onClick={() => setShowDistances(!showDistances)} className="flex items-center gap-1.5 text-[10px] font-bold text-amber-700 hover:text-amber-800" style={{ touchAction: 'manipulation' }}>
+              <Route className="h-3 w-3" /> {showDistances ? 'Ocultar' : 'Ver'} distancias a {distsToOthers.length} clientes
+            </button>
+            {showDistances && (
+              <div className="mt-1.5 bg-amber-50/80 border border-amber-200 rounded-xl max-h-40 overflow-y-auto">
+                {distsToOthers.length === 0 ? (
+                  <p className="text-[10px] text-zinc-400 text-center py-2">No hay otros clientes</p>
+                ) : distsToOthers.map(p => (
+                  <div key={p.id} className="flex items-center justify-between px-3 py-1.5 border-b border-amber-100 last:border-0">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${p.estado === 'esperando' ? 'bg-emerald-500' : 'bg-purple-500'}`} />
+                      <span className="text-[10px] text-zinc-700 truncate">{p.nombre}</span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className={`text-[10px] font-bold ${p.dMi < 2 ? 'text-emerald-600' : p.dMi < 5 ? 'text-orange-600' : 'text-red-600'}`}>{p.dMi.toFixed(1)} mi</span>
+                      <a href={navGoogleMaps(pickup.lat, pickup.lng).replace(`destination=${pickup.lat},${pickup.lng}`, `origin=${pickup.lat},${pickup.lng}&destination=${p.lat},${p.lng}`)} target="_blank" rel="noopener" className="text-[8px] text-blue-500 font-bold px-1.5 py-0.5 rounded bg-blue-50 hover:bg-blue-100">G</a>
+                      <a href={navWaze(p.lat, p.lng)} target="_blank" rel="noopener" className="text-[8px] text-emerald-600 font-bold px-1.5 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100">W</a>
+                      <a href={navAppleMaps(p.lat, p.lng)} target="_blank" rel="noopener" className="text-[8px] text-zinc-600 font-bold px-1.5 py-0.5 rounded bg-zinc-100 hover:bg-zinc-200">A</a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
             {isEsp ? (
