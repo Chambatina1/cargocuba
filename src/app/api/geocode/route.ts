@@ -19,7 +19,7 @@ function cleanAddress(raw: string): string {
 function spanishToEnglish(raw: string): string {
   let q = raw;
   const map: [RegExp, string][] = [
-    [/\bcalle\b/i, 'street'], [/\bavenida\b/i, 'avenue'], [/\bave\b/i, 'avenue'],
+    [/\bcalle\b/i, 'street'], [/\bcra\b/i, 'street'], [/\bavenida\b/i, 'avenue'], [/\bave\b/i, 'avenue'],
     [/\bboulevard\b/i, 'blvd'], [/\bblvd\b/i, 'blvd'],[/\bcarretera\b/i, 'highway'],
     [/\bautopista\b/i, 'expressway'], [/\bnoroeste\b/i, 'northwest'], [/\bnoreste\b/i, 'northeast'],
     [/\bsuroeste\b/i, 'southwest'], [/\bsureste\b/i, 'southeast'],[/\bnorte\b/i, 'north'],
@@ -83,9 +83,10 @@ async function nominatimSearch(query: string): Promise<GeoResult[]> {
 }
 
 // ─── 3. Photon (Komoot - excellent address search) ─────────────────────
-async function photonSearch(query: string): Promise<GeoResult[]> {
+async function photonSearch(query: string, bbox?: string): Promise<GeoResult[]> {
   try {
-    const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=5&lang=es`;
+    let url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=6&lang=es`;
+    if (bbox) url += `&bbox=${bbox}`;
     const r = await fetch(url, { signal: AbortSignal.timeout(4000) });
     const j = await r.json();
     if (!j?.features) return [];
@@ -196,13 +197,14 @@ export async function GET(req: NextRequest) {
     q !== qEn ? censusGeocode(qEn) : Promise.resolve([]),
     nominatimSearch(q),
     photonSearch(q),
-    photonSearch(q + ', Florida'),
+    photonSearch(q, '-87.6,25,-79.8,31'),
+    photonSearch(q + ', Florida', '-87.6,25,-79.8,31'),
     nominatimFlorida(q),
     nominatimCuba(q),
   ]);
 
   // Combine: Census first (most precise for US), then others
-  const all = [...census, ...censusEn, ...photonFL, ...photon, ...nomDirect, ...nomFL, ...nomCU];
+  const all = [...census, ...censusEn, ...photon, ...nomDirect, ...nomFL, ...nomCU];
   const deduped = dedupe(all);
 
   // Sort: census results first, then by source quality
