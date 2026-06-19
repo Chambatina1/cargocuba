@@ -302,6 +302,11 @@ export default function CargoCubaPage() {
   const [selectRouteData, setSelectRouteData] = useState<{ totalDistance: number; totalDuration: number; legs: { duration: number; distance: number }[] } | null>(null);
   const [calcSelectRoute, setCalcSelectRoute] = useState(false);
 
+  // ─── Distance Reference Point (tap to set origin for distance calculations) ───
+  const [distRefMode, setDistRefMode] = useState(false);
+  const [distRefPoint, setDistRefPoint] = useState<{ lat: number; lng: number; name: string; pickupId?: number } | null>(null);
+  const distRefMarkerRef = useRef<any>(null);
+
   // ─── Client Tap Mode (tap map to place pickup) ───
   const [clientTapMode, setClientTapMode] = useState(false);
   const clientTapModeRef = useRef(false);
@@ -375,13 +380,41 @@ export default function CargoCubaPage() {
   }, [drivers, followingDriver, followDriverPhone]);
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // DISTANCE REFERENCE MODE: tap a marker to set as reference for distances
+  // ═══════════════════════════════════════════════════════════════════════════
+  const toggleDistRefMode = useCallback(() => {
+    const next = !distRefMode;
+    setDistRefMode(next);
+    if (!next) { setDistRefPoint(null); if (distRefMarkerRef.current) { distRefMarkerRef.current.remove(); distRefMarkerRef.current = null; } }
+    else { setSelectMode(false); setSelectedIds([]); setSelectRouteData(null); }
+  }, [distRefMode]);
+
+  const handleDistRefTap = useCallback((pickup: { id: number; nombre: string; lat: number; lng: number }) => {
+    if (!distRefMode) return;
+    setDistRefPoint({ lat: pickup.lat, lng: pickup.lng, name: pickup.nombre, pickupId: pickup.id });
+    setDistRefMode(false);
+    // Add marker
+    if (distRefMarkerRef.current) { distRefMarkerRef.current.remove(); distRefMarkerRef.current = null; }
+    if (mapInstRef.current && LRef.current) {
+      const L = LRef.current;
+      const icon = L.divIcon({
+        html: `<div style="position:relative;width:40px;height:40px;display:flex;align-items:center;justify-content:center;"><div style="width:28px;height:28px;background:#dc2626;border:3px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 12px rgba(220,38,38,0.5);z-index:2;"><span style="font-size:14px;">📍</span></div><div style="position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);white-space:nowrap;background:#dc2626;color:#fff;padding:1px 8px;border-radius:6px;font-size:8px;font-weight:800;font-family:system-ui;box-shadow:0 1px 4px rgba(0,0,0,0.2);">REFERENCIA</div></div>`,
+        className: '', iconSize: [40, 58], iconAnchor: [20, 20],
+      });
+      distRefMarkerRef.current = L.marker([pickup.lat, pickup.lng], { icon, zIndexOffset: 4000 }).addTo(mapInstRef.current);
+      distRefMarkerRef.current.bindPopup(`<div style="font-family:system-ui;"><strong style="font-size:13px;">${pickup.nombre}</strong><div style="font-size:11px;color:#dc2626;font-weight:600;margin-top:2px;">Punto de referencia para distancias</div><div style="font-size:10px;color:#666;margin-top:2px;">${pickup.direccion || ''}</div></div>`);
+    }
+    toast.success(`Referencia: ${pickup.nombre} — todas las distancias se miden desde aqui`);
+  }, [distRefMode]);
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // SELECT MODE: tap markers to pick, measure distances, optimize
   // ═══════════════════════════════════════════════════════════════════════════
   const toggleSelectMode = useCallback(() => {
     const next = !selectMode;
     setSelectMode(next);
     if (!next) { setSelectedIds([]); setSelectRouteData(null); }
-    else { setOptimizedRoute([]); setRouteData(null); setFollowingDriver(false); setFollowDriverPhone(null); }
+    else { setOptimizedRoute([]); setRouteData(null); setFollowingDriver(false); setFollowDriverPhone(null); setDistRefMode(false); }
   }, [selectMode]);
 
   const handleMarkerTap = useCallback((pickupId: number) => {
@@ -529,9 +562,11 @@ export default function CargoCubaPage() {
       const finalNum = isSelected ? selIdx + 1 : (showNum ? idx + 1 : undefined);
       const icon = L.icon({ iconUrl: pinSVG(finalColor, finalNum, isVerde && !isSelected), iconSize: [36, 46], iconAnchor: [18, 46], popupAnchor: [0, -46] });
       const marker = L.marker([p.lat, p.lng], { icon }).addTo(mapInstRef.current);
-      // In select mode, tapping toggles selection instead of opening popup
+      // In select mode, tapping toggles selection; in dist ref mode, tap sets reference
       if (selectMode) {
         marker.on('click', () => { handleMarkerTap(p.id); });
+      } else if (distRefMode) {
+        marker.on('click', () => { handleDistRefTap(p); });
       } else {
         const estadoLabel = isVerde ? 'En Espera' : 'Recogido';
         const estadoColor = isVerde ? VERDE : MORADO;
@@ -592,7 +627,7 @@ export default function CargoCubaPage() {
       }
     }
     setTimeout(() => mapInstRef.current?.invalidateSize(), 150);
-  }, [pickups, drivers, optimizedRoute, routeData, panel, mapReady, followingDriver, selectMode, selectedIds, selectRouteData, handleMarkerTap]);
+  }, [pickups, drivers, optimizedRoute, routeData, panel, mapReady, followingDriver, selectMode, selectedIds, selectRouteData, handleMarkerTap, distRefMode, handleDistRefTap]);
 
   useEffect(() => { setTimeout(() => { initMap(); renderMarkers(); }, 200); }, [initMap, renderMarkers]);
   useEffect(() => { if (mapInstRef.current) renderMarkers(); }, [renderMarkers]);
@@ -1003,11 +1038,16 @@ export default function CargoCubaPage() {
     setCalculatingDist(true);
     try {
       const matrix: { from: string; to: string; distMi: number }[] = [];
-      // Use selected driver's punto de partida if available, otherwise BASE
-      const selDriver = drivers.find(d => d.nombre === adminChofer);
-      const originLat = selDriver?.puntoPartidaLat ?? BASE_LAT;
-      const originLng = selDriver?.puntoPartidaLng ?? BASE_LNG;
-      const originName = selDriver?.puntoPartidaDir || 'BASE';
+      // Use distance reference point if set, then driver's punto de partida, then BASE
+      let originLat = distRefPoint?.lat ?? undefined;
+      let originLng = distRefPoint?.lng ?? undefined;
+      let originName = distRefPoint?.name ?? undefined;
+      if (!originLat) {
+        const selDriver = drivers.find(d => d.nombre === adminChofer);
+        originLat = selDriver?.puntoPartidaLat ?? BASE_LAT;
+        originLng = selDriver?.puntoPartidaLng ?? BASE_LNG;
+        originName = selDriver?.puntoPartidaDir || 'BASE';
+      }
       const all = [{ name: originName, lat: originLat, lng: originLng }, ...active.map(p => ({ name: p.nombre, lat: p.lat, lng: p.lng }))];
       for (let i = 0; i < all.length; i++) {
         for (let j = i + 1; j < all.length; j++) {
@@ -1017,7 +1057,7 @@ export default function CargoCubaPage() {
       }
       setDistMatrix(matrix);
       setAdminTab('distancias');
-      toast.success(`Matriz: ${all.length} puntos, ${matrix.length} pares` + (adminChofer ? ` desde ${selDriver?.nombre}` : ''));
+      toast.success(`Matriz: ${all.length} puntos, ${matrix.length} pares` + (distRefPoint ? ` desde ${distRefPoint.name}` : adminChofer ? ` desde ${drivers.find(d => d.nombre === adminChofer)?.nombre}` : ''));
     } catch (err: any) { toast.error('Error: ' + (err.message || '')); }
     setCalculatingDist(false);
   };
@@ -1065,6 +1105,10 @@ export default function CargoCubaPage() {
 
   // ─── Cumulative route info for scheduling ───
   const getRouteOrigin = () => {
+    // Priority: distRefPoint > driver punto de partida > BASE
+    if (distRefPoint) {
+      return { lat: distRefPoint.lat, lng: distRefPoint.lng, name: distRefPoint.name };
+    }
     if (adminChofer) {
       const selDriver = drivers.find(d => d.nombre === adminChofer);
       if (selDriver?.puntoPartidaLat && selDriver?.puntoPartidaLng) {
@@ -1470,6 +1514,18 @@ export default function CargoCubaPage() {
             )}
           </motion.button>
 
+          <motion.button whileTap={{ scale: 0.92 }} onClick={toggleDistRefMode}
+            className={`flex flex-col items-center gap-1 rounded-2xl px-3 py-2.5 shadow-2xl border relative ${distRefMode ? 'bg-red-500 border-red-600' : distRefPoint ? 'bg-red-50 border-red-300' : 'bg-white border-zinc-100'} transition-all`}
+            style={{ touchAction: 'manipulation' }}>
+            <div className={`w-9 h-9 rounded-full flex items-center justify-center ${distRefMode ? 'bg-white' : distRefPoint ? 'bg-red-500' : 'bg-red-500'}`}>
+              <MapPin className={`h-4 w-4 ${distRefMode ? 'text-red-500' : 'text-white'}`} />
+            </div>
+            <span className={`text-[9px] font-bold leading-tight ${distRefMode ? 'text-white' : distRefPoint ? 'text-red-700' : 'text-zinc-700'}`}>{distRefPoint ? 'Ref' : 'Ref'}</span>
+            {distRefPoint && !distRefMode && (
+              <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 rounded-full border-2 border-white" />
+            )}
+          </motion.button>
+
           <motion.button whileTap={{ scale: 0.92 }} onClick={() => { setAdminTab('lista'); setPanel('admin'); }}
             className="flex flex-col items-center gap-1 bg-white rounded-2xl px-3 py-2.5 shadow-2xl border border-zinc-100"
             style={{ touchAction: 'manipulation' }}>
@@ -1562,6 +1618,67 @@ export default function CargoCubaPage() {
                 </div>
               </div>
             )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ═══════════ DIST REF MODE BANNER ═══════════ */}
+      <AnimatePresence>
+        {distRefMode && (
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 30 }}
+            className="absolute bottom-24 left-3 right-3 z-[1002] bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-red-300 overflow-hidden"
+          >
+            <div className="px-4 py-3 bg-red-50 border-b border-red-200 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-full bg-red-500 flex items-center justify-center">
+                  <MapPin className="h-4 w-4 text-white animate-bounce" />
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-red-800 block">Toca un marcador para poner referencia</span>
+                  <span className="text-[9px] text-red-500">Ese punto sera el origen para calcular todas las distancias</span>
+                </div>
+              </div>
+              <button onClick={toggleDistRefMode}
+                className="text-[9px] font-bold px-2.5 py-1.5 rounded-lg bg-red-100 text-red-600 hover:bg-red-200"
+                style={{ touchAction: 'manipulation' }}>
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ═══════════ DIST REF POINT INFO BAR ═══════════ */}
+      <AnimatePresence>
+        {distRefPoint && !distRefMode && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="absolute bottom-24 left-3 right-3 z-[1002] bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-red-200 overflow-hidden"
+          >
+            <div className="px-4 py-2.5 flex items-center gap-3">
+              <div className="w-7 h-7 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0">
+                <MapPin className="h-3.5 w-3.5 text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] font-bold text-red-700">Referencia: {distRefPoint.name}</p>
+                <p className="text-[9px] text-zinc-500">Todas las distancias se miden desde aqui</p>
+              </div>
+              <button onClick={toggleDistRefMode}
+                className="text-[9px] font-bold px-2.5 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 flex items-center gap-1 flex-shrink-0"
+                style={{ touchAction: 'manipulation' }}>
+                <RotateCcw className="h-3 w-3" />Cambiar
+              </button>
+              <button onClick={() => { setDistRefPoint(null); if (distRefMarkerRef.current) { distRefMarkerRef.current.remove(); distRefMarkerRef.current = null; } }}
+                className="text-[9px] font-bold px-2 py-1.5 rounded-lg bg-zinc-100 text-zinc-500 hover:bg-zinc-200 flex-shrink-0"
+                style={{ touchAction: 'manipulation' }}>
+                <X className="h-3 w-3" />
+              </button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -2098,8 +2215,11 @@ export default function CargoCubaPage() {
                       const areaColor = ['bg-blue-500', 'bg-emerald-500', 'bg-orange-500', 'bg-purple-500', 'bg-pink-500', 'bg-cyan-500'][areas.findIndex(a => a[0] === areaName) % 6];
                       const areaBg = ['bg-blue-50', 'bg-emerald-50', 'bg-orange-50', 'bg-purple-50', 'bg-pink-50', 'bg-cyan-50'][areas.findIndex(a => a[0] === areaName) % 6];
                       const areaBorder = ['border-blue-200', 'border-emerald-200', 'border-orange-200', 'border-purple-200', 'border-pink-200', 'border-cyan-200'][areas.findIndex(a => a[0] === areaName) % 6];
-                      // Calculate distances from base to this area (avg)
-                      const avgDist = (areaPickups.reduce((s, p) => s + haversine(BASE_LAT, BASE_LNG, p.lat, p.lng) * 0.621371, 0) / areaPickups.length).toFixed(1);
+                      // Calculate distances from ref point (or BASE) to this area (avg)
+                      const refLat = distRefPoint?.lat ?? BASE_LAT;
+                      const refLng = distRefPoint?.lng ?? BASE_LNG;
+                      const refName = distRefPoint?.name ?? BASE_NAME;
+                      const avgDist = (areaPickups.reduce((s, p) => s + haversine(refLat, refLng, p.lat, p.lng) * 0.621371, 0) / areaPickups.length).toFixed(1);
                       return (
                         <div key={areaName} className={`border ${areaBorder} rounded-xl overflow-hidden`}>
                           {/* Area header */}
@@ -2107,7 +2227,7 @@ export default function CargoCubaPage() {
                             <div className={`w-7 h-7 rounded-full ${areaColor} text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0`}>{areaName.charAt(0)}</div>
                             <div className="flex-1 min-w-0">
                               <p className="text-[12px] font-bold text-zinc-800">{areaName}</p>
-                              <p className="text-[9px] text-zinc-500">{areaPickups.length} cliente{areaPickups.length !== 1 ? 's' : ''} · {avgDist} mi promedio de la Base</p>
+                              <p className="text-[9px] text-zinc-500">{areaPickups.length} cliente{areaPickups.length !== 1 ? 's' : ''} · {avgDist} mi promedio de {refName}</p>
                             </div>
                             <div className="flex items-center gap-1">
                               <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-full">{areaPickups.filter(p => p.estado === 'esperando').length} espera</span>
@@ -2121,7 +2241,7 @@ export default function CargoCubaPage() {
                               const distsInArea = areaPickups.filter(pp => pp.id !== pickup.id).map(pp => ({
                                 ...pp, dMi: haversine(pickup.lat, pickup.lng, pp.lat, pp.lng) * 0.621371
                               })).sort((a, b) => a.dMi - b.dMi);
-                              const distBase = (haversine(BASE_LAT, BASE_LNG, pickup.lat, pickup.lng) * 0.621371).toFixed(1);
+                              const distBase = (haversine(refLat, refLng, pickup.lat, pickup.lng) * 0.621371).toFixed(1);
                               const [showDists, setShowDists] = React.useState(false);
                               return (
                                 <div key={pickup.id} className="px-3 py-2 hover:bg-zinc-50/50">
@@ -2184,7 +2304,7 @@ export default function CargoCubaPage() {
                           <div key={p.id} className="px-3 py-2 border-b border-zinc-50 last:border-0 flex items-center gap-2">
                             <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${p.estado === 'esperando' ? 'bg-emerald-500' : 'bg-purple-500'}`} />
                             <span className="text-[11px] text-zinc-700 truncate flex-1">{p.nombre}</span>
-                            <span className="text-[9px] text-red-500 font-semibold">{(haversine(BASE_LAT, BASE_LNG, p.lat, p.lng) * 0.621371).toFixed(1)} mi</span>
+                            <span className="text-[9px] text-red-500 font-semibold">{(haversine(distRefPoint?.lat ?? BASE_LAT, distRefPoint?.lng ?? BASE_LNG, p.lat, p.lng) * 0.621371).toFixed(1)} mi</span>
                           </div>
                         ))}
                       </div>
@@ -2204,7 +2324,8 @@ export default function CargoCubaPage() {
                 <AdminCard key={p.id} pickup={p} allPickups={pickups.filter(pp => pp.estado !== 'cancelado' && pp.id !== p.id)} onUpdate={updatePickup} onDelete={deletePickup}
                   routeIdx={optimizedRoute.indexOf(p)} showRouteNum={optimizedRoute.length > 0}
                   leg={routeData?.legs[optimizedRoute.indexOf(p) + 1]} choferOptions={choferOptions}
-                  isSelected={adminSelectedIds.has(p.id)} onToggleSelect={(e) => toggleAdminSelect(p.id, e)} />
+                  isSelected={adminSelectedIds.has(p.id)} onToggleSelect={(e) => toggleAdminSelect(p.id, e)}
+                  distRefPoint={distRefPoint} />
               ))}
             </div>
             )}
@@ -2212,10 +2333,43 @@ export default function CargoCubaPage() {
             {/* Tab: DISTANCE MATRIX */}
             {adminTab === 'distancias' && (
             <div className="flex-1 overflow-y-auto p-4">
+              {/* Reference point selector */}
+              <div className="mb-3 bg-red-50 border border-red-200 rounded-xl p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="h-3.5 w-3.5 text-red-500" />
+                    <span className="text-[10px] font-bold text-red-700">Punto de Referencia</span>
+                  </div>
+                  {!distRefMode && (
+                    <button onClick={toggleDistRefMode}
+                      className="text-[9px] font-bold px-2 py-1 rounded-lg bg-red-500 text-white hover:bg-red-600 flex items-center gap-1"
+                      style={{ touchAction: 'manipulation' }}>
+                      <MapPin className="h-2.5 w-2.5" />Toca mapa
+                    </button>
+                  )}
+                </div>
+                {distRefPoint ? (
+                  <div className="flex items-center gap-2">
+                    <div className="w-5 h-5 rounded-full bg-red-500 text-white text-[8px] font-bold flex items-center justify-center flex-shrink-0">R</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] font-bold text-zinc-800 truncate">{distRefPoint.name}</p>
+                      <p className="text-[9px] text-zinc-500">Distancias medidas desde aqui</p>
+                    </div>
+                    <button onClick={() => { setDistRefPoint(null); if (distRefMarkerRef.current) { distRefMarkerRef.current.remove(); distRefMarkerRef.current = null; } setDistMatrix([]); }}
+                      className="text-[8px] font-bold px-2 py-1 rounded bg-white border border-red-200 text-red-600 hover:bg-red-50"
+                      style={{ touchAction: 'manipulation' }}>
+                      Quitar
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-[9px] text-zinc-500">{routeOrigin.name === BASE_NAME ? 'Toca "Ref" en el mapa y selecciona un punto para medir desde ahi' : `Usando: ${routeOrigin.name}`}</p>
+                )}
+              </div>
               {distMatrix.length === 0 ? (
                 <div className="p-8 text-center">
                   <Route className="h-7 w-7 text-zinc-300 mx-auto mb-2" />
-                  <p className="text-xs text-zinc-400 mb-3">Calcula las distancias entre todos los clientes</p>
+                  <p className="text-xs text-zinc-400 mb-1">Calcula las distancias entre todos los clientes</p>
+                  <p className="text-[10px] text-zinc-300 mb-3">{distRefPoint ? `Desde: ${distRefPoint.name}` : `Desde: ${routeOrigin.name}`}</p>
                   <button onClick={handleCalcDistances} disabled={calculatingDist || pickups.filter(p => p.estado !== 'cancelado').length < 2}
                     className="bg-orange-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 mx-auto hover:bg-orange-600 disabled:opacity-40"
                     style={{ touchAction: 'manipulation' }}>
@@ -2224,9 +2378,9 @@ export default function CargoCubaPage() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <p className="text-[10px] font-bold text-zinc-500 mb-2">DISTANCIAS ENTRE PUNTOS (millas)</p>
-                  {/* From Base section */}
-                  <div className="bg-red-50 border border-red-100 rounded-xl p-3">
+                  <p className="text-[10px] font-bold text-zinc-500 mb-2">DISTANCIAS DESDE {routeOrigin.name.toUpperCase()} (millas)</p>
+                  {/* From Reference section */}
+                  <div className={`border rounded-xl p-3 ${distRefPoint ? 'bg-red-50 border-red-200' : 'bg-red-50 border-red-100'}`}>
                     <p className="text-[10px] font-bold text-red-600 mb-2 flex items-center gap-1"><MapPin className="h-3 w-3" />Desde {routeOrigin.name}</p>
                     <div className="grid grid-cols-2 gap-1.5">
                       {distMatrix.filter(m => m.from === routeOrigin.name).sort((a, b) => a.distMi - b.distMi).map((m, i) => (
@@ -2239,7 +2393,7 @@ export default function CargoCubaPage() {
                   </div>
                   {/* Between clients */}
                   <p className="text-[10px] font-bold text-zinc-500 mt-3 mb-1">ENTRE CLIENTES</p>
-                  {distMatrix.filter(m => m.from !== 'BASE').map((m, i) => (
+                  {distMatrix.filter(m => m.from !== 'BASE' && m.from !== routeOrigin.name).map((m, i) => (
                     <div key={i} className="bg-white border border-zinc-100 rounded-lg px-3 py-2 flex items-center justify-between">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <span className="text-[10px] font-semibold text-zinc-700 truncate">{m.from}</span>
@@ -2541,15 +2695,18 @@ export default function CargoCubaPage() {
 // ADMIN CARD
 // ═══════════════════════════════════════════════════════════════════════════
 
-function AdminCard({ pickup, allPickups, onUpdate, onDelete, routeIdx, showRouteNum, leg, choferOptions, isSelected, onToggleSelect }: {
+function AdminCard({ pickup, allPickups, onUpdate, onDelete, routeIdx, showRouteNum, leg, choferOptions, isSelected, onToggleSelect, distRefPoint }: {
   pickup: Pickup; allPickups: Pickup[]; onUpdate: (id: number, data: any) => void; onDelete: (id: number) => void;
   routeIdx: number; showRouteNum: boolean; leg?: { duration: number; distance: number };
   choferOptions: string[]; isSelected?: boolean; onToggleSelect?: (e?: React.MouseEvent) => void;
+  distRefPoint?: { lat: number; lng: number; name: string } | null;
 }) {
   const isEsp = pickup.estado === 'esperando';
   const [expanded, setExpanded] = useState(false);
   const [showDistances, setShowDistances] = useState(false);
-  const distMi = distMilesFromBase(pickup.lat, pickup.lng).toFixed(1);
+  const distRefLat = distRefPoint?.lat ?? BASE_LAT;
+  const distRefLng = distRefPoint?.lng ?? BASE_LNG;
+  const distMi = haversine(distRefLat, distRefLng, pickup.lat, pickup.lng).toFixed(1);
   // Distances from this pickup to all others, sorted nearest first
   const distsToOthers = allPickups
     .map(p => ({ ...p, dMi: haversine(pickup.lat, pickup.lng, p.lat, p.lng) * 0.621371 }))
@@ -2616,7 +2773,7 @@ function AdminCard({ pickup, allPickups, onUpdate, onDelete, routeIdx, showRoute
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px]">
             {pickup.telefono && <div><span className="text-zinc-400">Telefono:</span> <a href={`tel:${pickup.telefono}`} className="text-blue-600 font-medium">{pickup.telefono}</a></div>}
             {pickup.choferAsignado && <div><span className="text-zinc-400">Chofer:</span> <span className="text-zinc-700 font-medium">{pickup.choferAsignado}</span></div>}
-            <div><span className="text-zinc-400">Distancia:</span> <span className="text-red-500 font-semibold">{distMi} mi de la Base</span></div>
+            <div><span className="text-zinc-400">Distancia:</span> <span className="text-red-500 font-semibold">{distMi} mi{distRefPoint ? ` de ${distRefPoint.name}` : ' de la Base'}</span></div>
             <div><span className="text-zinc-400">Creada:</span> <span className="text-zinc-600">{new Date(pickup.createdAt).toLocaleString('es', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span></div>
             {pickup.horarioReady && <div><span className="text-zinc-400">Horario Ready:</span> <span className="text-blue-600 font-bold">{pickup.horarioReady}</span></div>}
             <div><span className="text-zinc-400">Area:</span> <select value={pickup.area || ''} onChange={e => onUpdate(pickup.id, { area: e.target.value || null })} className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 focus:outline-none">
