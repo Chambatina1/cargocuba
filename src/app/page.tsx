@@ -307,6 +307,17 @@ export default function CargoCubaPage() {
   const [distRefPoint, setDistRefPoint] = useState<{ lat: number; lng: number; name: string; pickupId?: number } | null>(null);
   const distRefMarkerRef = useRef<any>(null);
 
+  // Helper: get the effective reference for distances (refPoint > driverPP > BASE)
+  const getEffectiveRef = useCallback(() => {
+    if (distRefPoint) return { lat: distRefPoint.lat, lng: distRefPoint.lng, name: distRefPoint.name };
+    const selDriver = drivers.find(d => d.nombre === adminChofer);
+    if (selDriver?.puntoPartidaLat && selDriver?.puntoPartidaLng) {
+      return { lat: selDriver.puntoPartidaLat, lng: selDriver.puntoPartidaLng, name: selDriver.puntoPartidaDir || selDriver.nombre };
+    }
+    return { lat: BASE_LAT, lng: BASE_LNG, name: BASE_NAME };
+  }, [distRefPoint, drivers, adminChofer]);
+  const effectiveRef = getEffectiveRef();
+
   // ─── Client Tap Mode (tap map to place pickup) ───
   const [clientTapMode, setClientTapMode] = useState(false);
   const clientTapModeRef = useRef(false);
@@ -1031,33 +1042,37 @@ export default function CargoCubaPage() {
     } catch {}
   };
 
-  // ─── Compute distance matrix between all pickups + origin point ───
+  // ─── Auto-recalculate distance matrix when reference point changes ───
+  const computeDistMatrix = useCallback((originLat: number, originLng: number, originName: string) => {
+    const active = pickups.filter(p => p.estado !== 'cancelado');
+    if (active.length < 1) return [];
+    const matrix: { from: string; to: string; distMi: number }[] = [];
+    const all = [{ name: originName, lat: originLat, lng: originLng }, ...active.map(p => ({ name: p.nombre, lat: p.lat, lng: p.lng }))];
+    for (let i = 0; i < all.length; i++) {
+      for (let j = i + 1; j < all.length; j++) {
+        const dMi = haversine(all[i].lat, all[i].lng, all[j].lat, all[j].lng) * 0.621371;
+        matrix.push({ from: all[i].name, to: all[j].name, distMi: Math.round(dMi * 10) / 10 });
+      }
+    }
+    return matrix;
+  }, [pickups]);
+
+  // Auto-compute distances when effectiveRef changes (if matrix was already computed)
+  useEffect(() => {
+    if (distMatrix.length > 0) {
+      setDistMatrix(computeDistMatrix(effectiveRef.lat, effectiveRef.lng, effectiveRef.name));
+    }
+  }, [effectiveRef.lat, effectiveRef.lng, effectiveRef.name]);
+
   const handleCalcDistances = async () => {
     const active = pickups.filter(p => p.estado !== 'cancelado');
     if (active.length < 2) { toast.error('Necesitas al menos 2 clientes'); return; }
     setCalculatingDist(true);
     try {
-      const matrix: { from: string; to: string; distMi: number }[] = [];
-      // Use distance reference point if set, then driver's punto de partida, then BASE
-      let originLat = distRefPoint?.lat ?? undefined;
-      let originLng = distRefPoint?.lng ?? undefined;
-      let originName = distRefPoint?.name ?? undefined;
-      if (!originLat) {
-        const selDriver = drivers.find(d => d.nombre === adminChofer);
-        originLat = selDriver?.puntoPartidaLat ?? BASE_LAT;
-        originLng = selDriver?.puntoPartidaLng ?? BASE_LNG;
-        originName = selDriver?.puntoPartidaDir || 'BASE';
-      }
-      const all = [{ name: originName, lat: originLat, lng: originLng }, ...active.map(p => ({ name: p.nombre, lat: p.lat, lng: p.lng }))];
-      for (let i = 0; i < all.length; i++) {
-        for (let j = i + 1; j < all.length; j++) {
-          const dMi = haversine(all[i].lat, all[i].lng, all[j].lat, all[j].lng) * 0.621371;
-          matrix.push({ from: all[i].name, to: all[j].name, distMi: Math.round(dMi * 10) / 10 });
-        }
-      }
+      const matrix = computeDistMatrix(effectiveRef.lat, effectiveRef.lng, effectiveRef.name);
       setDistMatrix(matrix);
       setAdminTab('distancias');
-      toast.success(`Matriz: ${all.length} puntos, ${matrix.length} pares` + (distRefPoint ? ` desde ${distRefPoint.name}` : adminChofer ? ` desde ${drivers.find(d => d.nombre === adminChofer)?.nombre}` : ''));
+      toast.success(`Matriz: ${active.length + 1} puntos, ${matrix.length} pares desde ${effectiveRef.name}`);
     } catch (err: any) { toast.error('Error: ' + (err.message || '')); }
     setCalculatingDist(false);
   };
@@ -1103,20 +1118,8 @@ export default function CargoCubaPage() {
     setScheduling(false);
   };
 
-  // ─── Cumulative route info for scheduling ───
-  const getRouteOrigin = () => {
-    // Priority: distRefPoint > driver punto de partida > BASE
-    if (distRefPoint) {
-      return { lat: distRefPoint.lat, lng: distRefPoint.lng, name: distRefPoint.name };
-    }
-    if (adminChofer) {
-      const selDriver = drivers.find(d => d.nombre === adminChofer);
-      if (selDriver?.puntoPartidaLat && selDriver?.puntoPartidaLng) {
-        return { lat: selDriver.puntoPartidaLat, lng: selDriver.puntoPartidaLng, name: selDriver.puntoPartidaDir || selDriver.nombre };
-      }
-    }
-    return { lat: BASE_LAT, lng: BASE_LNG, name: BASE_NAME };
-  };
+  // ─── Cumulative route info for scheduling (uses effectiveRef) ───
+  const getRouteOrigin = () => effectiveRef;
 
   const routeOrigin = getRouteOrigin();
 
@@ -2023,13 +2026,13 @@ export default function CargoCubaPage() {
                     <div className="space-y-2">
                       {pickups.filter(p => p.choferAsignado === driverPhone.trim() && p.estado !== 'cancelado').map(p => {
                         const isEsp = p.estado === 'esperando';
-                        const distMi = distMilesFromBase(p.lat, p.lng).toFixed(1);
+                        const distMi = haversine(effectiveRef.lat, effectiveRef.lng, p.lat, p.lng).toFixed(1);
                         return (
                           <div key={p.id} className="rounded-xl border border-zinc-200 p-3 flex items-center gap-3 bg-white/80" style={{ borderLeftWidth: 3, borderLeftColor: isEsp ? VERDE : MORADO }}>
                             <div className="flex-1 min-w-0">
                               <p className="text-xs font-bold text-zinc-800">{p.nombre}</p>
                               <p className="text-[10px] text-zinc-400 truncate">{p.direccion}</p>
-                              <p className="text-[9px] text-red-500 font-semibold mt-0.5">{distMi} mi de la Base</p>
+                              <p className="text-[9px] text-red-500 font-semibold mt-0.5">{distMi} mi de {effectiveRef.name}</p>
                               {p.telefono && <a href={`tel:${p.telefono}`} className="text-[10px] text-blue-600 font-semibold">{p.telefono}</a>}
                             </div>
                             {isEsp && (
@@ -2098,6 +2101,60 @@ export default function CargoCubaPage() {
               <div className="flex-1" />
               <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-700"><span className="w-2 h-2 rounded-full bg-emerald-500" />{esperandoCount}</span>
               <span className="flex items-center gap-1 text-[10px] font-bold text-purple-700"><span className="w-2 h-2 rounded-full bg-purple-500" />{recogidosCount}</span>
+            </div>
+
+            {/* Reference point bar — always visible in admin */}
+            <div className="px-4 py-1.5 border-b border-zinc-100 flex items-center gap-2 bg-red-50/80 flex-shrink-0">
+              <MapPin className="h-3 w-3 text-red-500 flex-shrink-0" />
+              <span className="text-[9px] font-bold text-red-700 flex-shrink-0">Ref:</span>
+              <select
+                value={distRefPoint ? `pickup-${distRefPoint.pickupId}` : adminChofer && drivers.find(d => d.nombre === adminChofer)?.puntoPartidaLat ? `driver-${adminChofer}` : 'base'}
+                onChange={e => {
+                  const v = e.target.value;
+                  if (v === 'base') {
+                    setDistRefPoint(null);
+                    if (distRefMarkerRef.current) { distRefMarkerRef.current.remove(); distRefMarkerRef.current = null; }
+                  } else if (v.startsWith('pickup-')) {
+                    const pid = parseInt(v.split('-')[1]);
+                    const p = pickups.find(pp => pp.id === pid);
+                    if (p) {
+                      setDistRefPoint({ lat: p.lat, lng: p.lng, name: p.nombre, pickupId: p.id });
+                      // Add ref marker on map
+                      if (distRefMarkerRef.current) { distRefMarkerRef.current.remove(); distRefMarkerRef.current = null; }
+                      if (mapInstRef.current && LRef.current) {
+                        const L = LRef.current;
+                        const icon = L.divIcon({ html: `<div style="position:relative;width:40px;height:40px;display:flex;align-items:center;justify-content:center;"><div style="width:28px;height:28px;background:#dc2626;border:3px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 12px rgba(220,38,38,0.5);z-index:2;"><span style="font-size:14px;">📍</span></div><div style="position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);white-space:nowrap;background:#dc2626;color:#fff;padding:1px 8px;border-radius:6px;font-size:8px;font-weight:800;font-family:system-ui;">REFERENCIA</div></div>`, className: '', iconSize: [40, 58], iconAnchor: [20, 20] });
+                        distRefMarkerRef.current = L.marker([p.lat, p.lng], { icon, zIndexOffset: 4000 }).addTo(mapInstRef.current);
+                      }
+                      toast.success(`Referencia: ${p.nombre}`);
+                    }
+                  } else if (v.startsWith('driver-')) {
+                    setDistRefPoint(null);
+                    if (distRefMarkerRef.current) { distRefMarkerRef.current.remove(); distRefMarkerRef.current = null; }
+                  }
+                }}
+                className="flex-1 h-7 px-2 rounded-lg border border-red-200 text-[10px] font-semibold bg-white focus:outline-none focus:ring-1 focus:ring-red-300"
+              >
+                <option value="base">Base ({BASE_NAME})</option>
+                {drivers.filter(d => d.puntoPartidaLat && d.puntoPartidaLng).map(d => (
+                  <option key={`driver-${d.nombre}`} value={`driver-${d.nombre}`}>Chofer: {d.nombre} ({d.puntoPartidaDir || 'GPS'})</option>
+                ))}
+                {pickups.filter(p => p.estado !== 'cancelado').sort((a, b) => a.nombre.localeCompare(b.nombre)).map(p => (
+                  <option key={`pickup-${p.id}`} value={`pickup-${p.id}`}>{p.nombre} ({p.direccion?.substring(0, 25)})</option>
+                ))}
+              </select>
+              {distRefPoint && (
+                <button onClick={() => { setDistRefPoint(null); if (distRefMarkerRef.current) { distRefMarkerRef.current.remove(); distRefMarkerRef.current = null; } }}
+                  className="text-[8px] font-bold px-1.5 py-1 rounded bg-red-100 text-red-600 hover:bg-red-200 flex-shrink-0"
+                  style={{ touchAction: 'manipulation' }}>
+                  <X className="h-2.5 w-2.5 inline" /> Quitar
+                </button>
+              )}
+              <button onClick={toggleDistRefMode}
+                className="text-[8px] font-bold px-1.5 py-1 rounded bg-red-500 text-white hover:bg-red-600 flex items-center gap-1 flex-shrink-0"
+                style={{ touchAction: 'manipulation' }}>
+                <Crosshair className="h-2.5 w-2.5" />Mapa
+              </button>
             </div>
 
             {/* Action bar for lista tab */}
@@ -2325,7 +2382,7 @@ export default function CargoCubaPage() {
                   routeIdx={optimizedRoute.indexOf(p)} showRouteNum={optimizedRoute.length > 0}
                   leg={routeData?.legs[optimizedRoute.indexOf(p) + 1]} choferOptions={choferOptions}
                   isSelected={adminSelectedIds.has(p.id)} onToggleSelect={(e) => toggleAdminSelect(p.id, e)}
-                  distRefPoint={distRefPoint} />
+                  effectiveRef={effectiveRef} />
               ))}
             </div>
             )}
@@ -2333,43 +2390,17 @@ export default function CargoCubaPage() {
             {/* Tab: DISTANCE MATRIX */}
             {adminTab === 'distancias' && (
             <div className="flex-1 overflow-y-auto p-4">
-              {/* Reference point selector */}
-              <div className="mb-3 bg-red-50 border border-red-200 rounded-xl p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <MapPin className="h-3.5 w-3.5 text-red-500" />
-                    <span className="text-[10px] font-bold text-red-700">Punto de Referencia</span>
-                  </div>
-                  {!distRefMode && (
-                    <button onClick={toggleDistRefMode}
-                      className="text-[9px] font-bold px-2 py-1 rounded-lg bg-red-500 text-white hover:bg-red-600 flex items-center gap-1"
-                      style={{ touchAction: 'manipulation' }}>
-                      <MapPin className="h-2.5 w-2.5" />Toca mapa
-                    </button>
-                  )}
+              <div className="mb-3 bg-red-50 border border-red-200 rounded-xl p-2.5 flex items-center gap-2">
+                <div className="w-5 h-5 rounded-full bg-red-500 text-white text-[8px] font-bold flex items-center justify-center flex-shrink-0">R</div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-bold text-zinc-800 truncate">Distancias desde: {routeOrigin.name}</p>
+                  <p className="text-[8px] text-zinc-500">Cambia la referencia arriba con el dropdown "Ref"</p>
                 </div>
-                {distRefPoint ? (
-                  <div className="flex items-center gap-2">
-                    <div className="w-5 h-5 rounded-full bg-red-500 text-white text-[8px] font-bold flex items-center justify-center flex-shrink-0">R</div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[11px] font-bold text-zinc-800 truncate">{distRefPoint.name}</p>
-                      <p className="text-[9px] text-zinc-500">Distancias medidas desde aqui</p>
-                    </div>
-                    <button onClick={() => { setDistRefPoint(null); if (distRefMarkerRef.current) { distRefMarkerRef.current.remove(); distRefMarkerRef.current = null; } setDistMatrix([]); }}
-                      className="text-[8px] font-bold px-2 py-1 rounded bg-white border border-red-200 text-red-600 hover:bg-red-50"
-                      style={{ touchAction: 'manipulation' }}>
-                      Quitar
-                    </button>
-                  </div>
-                ) : (
-                  <p className="text-[9px] text-zinc-500">{routeOrigin.name === BASE_NAME ? 'Toca "Ref" en el mapa y selecciona un punto para medir desde ahi' : `Usando: ${routeOrigin.name}`}</p>
-                )}
               </div>
               {distMatrix.length === 0 ? (
                 <div className="p-8 text-center">
                   <Route className="h-7 w-7 text-zinc-300 mx-auto mb-2" />
-                  <p className="text-xs text-zinc-400 mb-1">Calcula las distancias entre todos los clientes</p>
-                  <p className="text-[10px] text-zinc-300 mb-3">{distRefPoint ? `Desde: ${distRefPoint.name}` : `Desde: ${routeOrigin.name}`}</p>
+                  <p className="text-xs text-zinc-400 mb-3">Calcula las distancias entre todos los clientes</p>
                   <button onClick={handleCalcDistances} disabled={calculatingDist || pickups.filter(p => p.estado !== 'cancelado').length < 2}
                     className="bg-orange-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 mx-auto hover:bg-orange-600 disabled:opacity-40"
                     style={{ touchAction: 'manipulation' }}>
@@ -2670,13 +2701,13 @@ export default function CargoCubaPage() {
                   <Clock className="h-2.5 w-2.5" />{g.time}
                 </div>
                 {g.items.map(({ p, idx }) => {
-                  const distMi = distMilesFromBase(p.lat, p.lng).toFixed(1);
+                  const distMi = haversine(effectiveRef.lat, effectiveRef.lng, p.lat, p.lng).toFixed(1);
                   return (
                     <div key={p.id} className="flex items-start gap-1.5 py-0.5">
                       <div className="w-4 h-4 rounded-full bg-blue-600 text-white text-[8px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{idx + 1}</div>
                       <div className="min-w-0">
                         <p className="text-[10px] font-semibold text-zinc-800 truncate leading-tight">{p.nombre}</p>
-                        <p className="text-[8px] text-red-500">{distMi} mi de la Base</p>
+                        <p className="text-[8px] text-red-500">{distMi} mi de {effectiveRef.name}</p>
                         {routeData.legs[idx + 1] && <p className="text-[8px] text-blue-500">{fmtDist(routeData.legs[idx + 1].distance)} · {fmtTime(routeData.legs[idx + 1].duration)}</p>}
                       </div>
                     </div>
@@ -2695,18 +2726,17 @@ export default function CargoCubaPage() {
 // ADMIN CARD
 // ═══════════════════════════════════════════════════════════════════════════
 
-function AdminCard({ pickup, allPickups, onUpdate, onDelete, routeIdx, showRouteNum, leg, choferOptions, isSelected, onToggleSelect, distRefPoint }: {
+function AdminCard({ pickup, allPickups, onUpdate, onDelete, routeIdx, showRouteNum, leg, choferOptions, isSelected, onToggleSelect, effectiveRef }: {
   pickup: Pickup; allPickups: Pickup[]; onUpdate: (id: number, data: any) => void; onDelete: (id: number) => void;
   routeIdx: number; showRouteNum: boolean; leg?: { duration: number; distance: number };
   choferOptions: string[]; isSelected?: boolean; onToggleSelect?: (e?: React.MouseEvent) => void;
-  distRefPoint?: { lat: number; lng: number; name: string } | null;
+  effectiveRef?: { lat: number; lng: number; name: string };
 }) {
   const isEsp = pickup.estado === 'esperando';
   const [expanded, setExpanded] = useState(false);
   const [showDistances, setShowDistances] = useState(false);
-  const distRefLat = distRefPoint?.lat ?? BASE_LAT;
-  const distRefLng = distRefPoint?.lng ?? BASE_LNG;
-  const distMi = haversine(distRefLat, distRefLng, pickup.lat, pickup.lng).toFixed(1);
+  const ref = effectiveRef || { lat: BASE_LAT, lng: BASE_LNG, name: BASE_NAME };
+  const distMi = haversine(ref.lat, ref.lng, pickup.lat, pickup.lng).toFixed(1);
   // Distances from this pickup to all others, sorted nearest first
   const distsToOthers = allPickups
     .map(p => ({ ...p, dMi: haversine(pickup.lat, pickup.lng, p.lat, p.lng) * 0.621371 }))
@@ -2773,7 +2803,7 @@ function AdminCard({ pickup, allPickups, onUpdate, onDelete, routeIdx, showRoute
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px]">
             {pickup.telefono && <div><span className="text-zinc-400">Telefono:</span> <a href={`tel:${pickup.telefono}`} className="text-blue-600 font-medium">{pickup.telefono}</a></div>}
             {pickup.choferAsignado && <div><span className="text-zinc-400">Chofer:</span> <span className="text-zinc-700 font-medium">{pickup.choferAsignado}</span></div>}
-            <div><span className="text-zinc-400">Distancia:</span> <span className="text-red-500 font-semibold">{distMi} mi{distRefPoint ? ` de ${distRefPoint.name}` : ' de la Base'}</span></div>
+            <div><span className="text-zinc-400">Distancia:</span> <span className="text-red-500 font-semibold">{distMi} mi de {ref.name}</span></div>
             <div><span className="text-zinc-400">Creada:</span> <span className="text-zinc-600">{new Date(pickup.createdAt).toLocaleString('es', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span></div>
             {pickup.horarioReady && <div><span className="text-zinc-400">Horario Ready:</span> <span className="text-blue-600 font-bold">{pickup.horarioReady}</span></div>}
             <div><span className="text-zinc-400">Area:</span> <select value={pickup.area || ''} onChange={e => onUpdate(pickup.id, { area: e.target.value || null })} className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 focus:outline-none">
