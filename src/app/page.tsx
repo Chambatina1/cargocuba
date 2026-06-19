@@ -115,88 +115,28 @@ function optimizeOrder(pickups: Pickup[], startLat = BASE_LAT, startLng = BASE_L
   return ordered;
 }
 
-// ─── Clean address: remove CJK and non-Latin characters ────────────────
-function cleanAddress(raw: string): string {
-  // Remove CJK characters (Chinese, Japanese, Korean)
-  let clean = raw.replace(/[\u4e00-\u9fff\u3400-\u4dbf\uac00-\ud7af\u3040-\u309f\u30a0-\u30ff]/g, '').trim();
-  // Remove any resulting double spaces or double commas
-  clean = clean.replace(/\s{2,}/g, ' ').replace(/,\s*,/g, ',').replace(/,,+/g, ',').replace(/^,\s*/, '').replace(/,\s*$/, '').trim();
-  return clean || raw; // fallback to raw if empty after cleaning
-}
-
-// ─── US Census Geocoding (excellent US address coverage) ──────────────
-async function censusGeocode(query: string): Promise<GeoSuggestion | null> {
+// ─── Server-side geocoding via /api/geocode (Census + Nominatim + Photon) ─
+// All geocoding goes through our API route to avoid CORS and maximize coverage.
+// The server queries US Census (best US addresses), Photon (Komoot), and
+// Nominatim (OSM) in parallel — like having Google Maps quality.
+async function forwardGeocode(query: string): Promise<GeoSuggestion[]> {
   try {
-    const r = await fetch(`https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?address=${encodeURIComponent(query)}&benchmark=2020&format=json`);
+    const r = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`);
     const j = await r.json();
-    const matches = j?.result?.addressMatches;
-    if (matches && matches.length > 0) {
-      const m = matches[0];
-      const coords = m.coordinates;
-      const addr = m.addressComponents;
-      const display = [
-        addr.streetName ? `${addr.fromAddress || ''} ${addr.streetName} ${addr.suffixType || addr.preType || ''}`.trim() : '',
-        addr.city || '', addr.state || '', addr.zip || ''
-      ].filter(Boolean).join(', ');
-      return {
-        display_name: cleanAddress(display || query),
-        lat: String(coords.y),
-        lon: String(coords.x)
-      };
-    }
-    return null;
-  } catch { return null; }
-}
-
-// ─── Nominatim search ───────────────────────────────────────────────
-async function nominatimSearch(query: string, opts?: { viewbox?: string; bounded?: number }): Promise<GeoSuggestion[]> {
-  try {
-    let url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=8&accept-language=es,en`;
-    if (opts?.viewbox) url += `&viewbox=${opts.viewbox}&bounded=${opts.bounded ?? 0}`;
-    const r = await fetch(url, { headers: { 'User-Agent': 'CargoCuba-App/1.0' } });
-    const j = await r.json();
-    return ((j || []).slice(0, 8) as GeoSuggestion[]).map(s => ({
-      ...s,
-      display_name: cleanAddress(s.display_name)
-    })).filter(s => s.display_name.length > 3);
+    return (j.results || []).map((s: { display_name: string; lat: string; lon: string }) => ({
+      display_name: s.display_name,
+      lat: s.lat,
+      lon: s.lon
+    }));
   } catch { return []; }
 }
 
-// ─── Master search: Census (US) + Nominatim (world) in PARALLEL ─────
-async function forwardGeocode(query: string): Promise<GeoSuggestion[]> {
-  // Run Census + Nominatim in parallel for speed
-  const [censusResult, nomDirect, nomFlorida, nomCuba] = await Promise.all([
-    censusGeocode(query),
-    nominatimSearch(query),
-    nominatimSearch(`${query}, Florida, USA`),
-    nominatimSearch(`${query}, Cuba`),
-  ]);
-
-  // Priority: Census first (most precise for US), then Nominatim results
-  const all: GeoSuggestion[] = [];
-  if (censusResult) all.push(censusResult);
-  // Deduplicate by lat,lon
-  const seen = new Set<string>();
-  const addUnique = (list: GeoSuggestion[]) => {
-    for (const s of list) {
-      const key = `${s.lat},${s.lon}`;
-      if (!seen.has(key)) { seen.add(key); all.push(s); }
-    }
-  };
-  addUnique(nomDirect);
-  addUnique(nomFlorida);
-  addUnique(nomCuba);
-
-  return all;
-}
-
-// ─── Reverse Geocode ───────────────────────────────────────────────────────
+// ─── Reverse Geocode (server-side to avoid CORS) ─────────────────────────
 async function reverseGeocode(lat: number, lng: number): Promise<string> {
   try {
-    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=es,en`);
+    const r = await fetch(`/api/geocode/reverse?lat=${lat}&lon=${lng}`);
     const j = await r.json();
-    const raw = j.display_name || '';
-    return cleanAddress(raw);
+    return j.display_name || '';
   } catch { return ''; }
 }
 
@@ -632,7 +572,7 @@ export default function CargoCubaPage() {
   const handleSearchAddress = useCallback((q: string) => {
     setSearchQuery(q);
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    if (q.length < 4) { setSuggestions([]); setShowSuggestions(false); return; }
+    if (q.length < 3) { setSuggestions([]); setShowSuggestions(false); return; }
     setSearching(true); setShowSuggestions(true);
     searchTimerRef.current = setTimeout(async () => {
       // If it looks like a Google Maps link, just mark it directly
@@ -657,7 +597,7 @@ export default function CargoCubaPage() {
       const results = await forwardGeocode(q);
       setSuggestions(results); setSearching(false);
       // No toast on auto-search - just show suggestions or empty
-    }, 800);
+    }, 300);
   }, []);
 
   // Explicit search on button press / Enter key
@@ -1507,7 +1447,7 @@ export default function CargoCubaPage() {
                       onChange={e => handleSearchAddress(e.target.value)}
                       onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleClientSearchNow(); } }}
-                      placeholder="Escribe tu direccion..."
+                      placeholder="Ej: 8310 Lost Lake Dr, Orlando FL..."
                       className="w-full h-12 pl-10 pr-10 rounded-xl border-2 border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:border-emerald-400 bg-zinc-50 font-medium"
                       autoComplete="off"
                     />
@@ -1524,14 +1464,19 @@ export default function CargoCubaPage() {
                 </div>
                 {/* Sugerencias DENTRO del flujo (no absolute) */}
                 {showSuggestions && suggestions.length > 0 && (
-                  <div className="mt-1.5 bg-white border border-zinc-200 rounded-xl shadow-lg max-h-44 overflow-y-auto">
+                  <div className="mt-1.5 bg-white border border-zinc-200 rounded-xl shadow-lg max-h-52 overflow-y-auto">
                     {suggestions.map((s, i) => (
                       <button key={i} onClick={() => selectSuggestion(s)}
-                        className="w-full text-left px-4 py-2.5 hover:bg-emerald-50 border-b border-zinc-50 last:border-0 flex items-start gap-2" style={{ touchAction: 'manipulation' }}>
+                        className="w-full text-left px-4 py-3 hover:bg-emerald-50 border-b border-zinc-50 last:border-0 flex items-start gap-2.5" style={{ touchAction: 'manipulation' }}>
                         <MapPin className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
-                        <span className="text-xs text-zinc-700 leading-relaxed">{s.display_name.split(',').slice(0, 4).join(',')}</span>
+                        <span className="text-[13px] text-zinc-700 leading-snug">{s.display_name}</span>
                       </button>
                     ))}
+                  </div>
+                )}
+                {showSuggestions && !searching && suggestions.length === 0 && searchQuery.length >= 3 && (
+                  <div className="mt-1.5 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700">
+                    Sin resultados. Prueba con: calle, numero, ciudad y estado
                   </div>
                 )}
               </div>
