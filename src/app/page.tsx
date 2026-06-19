@@ -115,14 +115,27 @@ function optimizeOrder(pickups: Pickup[], startLat = BASE_LAT, startLng = BASE_L
   return ordered;
 }
 
+// ─── Clean address: remove CJK and non-Latin characters ────────────────
+function cleanAddress(raw: string): string {
+  // Remove CJK characters (Chinese, Japanese, Korean)
+  let clean = raw.replace(/[\u4e00-\u9fff\u3400-\u4dbf\uac00-\ud7af\u3040-\u309f\u30a0-\u30ff]/g, '').trim();
+  // Remove any resulting double spaces or double commas
+  clean = clean.replace(/\s{2,}/g, ' ').replace(/,\s*,/g, ',').replace(/,,+/g, ',').replace(/^,\s*/, '').replace(/,\s*$/, '').trim();
+  return clean || raw; // fallback to raw if empty after cleaning
+}
+
 // ─── Forward Geocode (Nominatim) with multi-strategy fallback ─────────
 async function nominatimSearch(query: string, opts?: { viewbox?: string; bounded?: number }): Promise<GeoSuggestion[]> {
   try {
-    let url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=8&accept-language=es`;
+    let url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=8&accept-language=es,en`;
     if (opts?.viewbox) url += `&viewbox=${opts.viewbox}&bounded=${opts.bounded ?? 0}`;
     const r = await fetch(url, { headers: { 'User-Agent': 'CargoCuba-App/1.0' } });
     const j = await r.json();
-    return (j || []).slice(0, 8);
+    // Filter results that have CJK characters and clean display names
+    return ((j || []).slice(0, 8) as GeoSuggestion[]).map(s => ({
+      ...s,
+      display_name: cleanAddress(s.display_name)
+    })).filter(s => s.display_name.length > 3);
   } catch { return []; }
 }
 
@@ -156,8 +169,10 @@ async function forwardGeocode(query: string): Promise<GeoSuggestion[]> {
 // ─── Reverse Geocode ───────────────────────────────────────────────────────
 async function reverseGeocode(lat: number, lng: number): Promise<string> {
   try {
-    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=es`);
-    const j = await r.json(); return j.display_name || '';
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=es,en`);
+    const j = await r.json();
+    const raw = j.display_name || '';
+    return cleanAddress(raw);
   } catch { return ''; }
 }
 
