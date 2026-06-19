@@ -65,6 +65,10 @@ function fmtDist(m: number) {
   return mi < 0.1 ? `${Math.round(m)} m` : `${mi.toFixed(1)} mi`;
 }
 function fmtTime(s: number) { if (s < 60) return `${Math.round(s)}s`; const m = Math.floor(s / 60); return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${m % 60}m`; }
+function absoluteETA(cumSeconds: number): string {
+  const d = new Date(Date.now() + cumSeconds * 1000);
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
 
 // ─── Haversine (returns km) ────────────────────────────────────────────────
 function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -232,6 +236,15 @@ export default function CargoCubaPage() {
   const ppTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ppPreviewRef = useRef<any>(null);
   const watchIdRef = useRef<number | null>(null);
+  const prevDriversRef = useRef<Map<string, { lat: number; lng: number; time: number }>>(new Map());
+  const driverSpeedsRef = useRef<Map<string, number>>(new Map()); // mph
+
+  // ─── Almacén de Destino ───
+  const [warehouse, setWarehouse] = useState<{ lat: number; lng: number; name: string } | null>(null);
+  const [whSearchQuery, setWhSearchQuery] = useState('');
+  const [whSuggestions, setWhSuggestions] = useState<GeoSuggestion[]>([]);
+  const [whSearching, setWhSearching] = useState(false);
+  const [whShowSugg, setWhShowSugg] = useState(false);
 
   // ─── Follow Driver Mode ───
   const [followingDriver, setFollowingDriver] = useState(false);
@@ -290,7 +303,26 @@ export default function CargoCubaPage() {
     try {
       const d = await fetch('/api/drivers');
       const j = await d.json();
-      if (j.ok) setDrivers(j.data || []);
+      const drvList = j.data || [];
+      if (j.ok) setDrivers(drvList);
+      // Calculate speed for each driver (mph)
+      const now = Date.now();
+      for (const drv of drvList) {
+        if (!drv.activo) continue;
+        const prev = prevDriversRef.current.get(drv.phone);
+        if (prev) {
+          const dtSec = (now - prev.time) / 1000;
+          if (dtSec > 2 && dtSec < 30) { // ignore stale or too-fast updates
+            const dKm = haversine(prev.lat, prev.lng, drv.lat, drv.lng);
+            const dMi = dKm * 0.621371;
+            const mph = (dMi / dtSec) * 3600;
+            // Smooth: average with previous speed, ignore unrealistic (>100mph)
+            const prevSpd = driverSpeedsRef.current.get(drv.phone) || 0;
+            driverSpeedsRef.current.set(drv.phone, mph > 0 && mph < 100 ? Math.round(prevSpd * 0.4 + mph * 0.6) : 0);
+          }
+        }
+        prevDriversRef.current.set(drv.phone, { lat: drv.lat, lng: drv.lng, time: now });
+      }
     } catch {}
     setLoading(false);
   }, []);
@@ -377,6 +409,17 @@ export default function CargoCubaPage() {
     const baseM = L.marker([BASE_LAT, BASE_LNG], { icon: baseIcon, zIndexOffset: 2000 }).addTo(mapInstRef.current);
     baseM.bindPopup(`<div style="font-family:system-ui;min-width:160px;"><strong style="font-size:13px;">Base</strong><div style="font-size:11px;color:#666;margin-top:2px;">${BASE_NAME}</div><div style="margin-top:4px;font-size:10px;color:#dc2626;font-weight:600;">Punto de partida principal</div></div>`);
     bounds.push([BASE_LAT, BASE_LNG]); markersRef.current.push(baseM);
+
+    // ─── WAREHOUSE / ALMACÉN marker (dark red flag) ───
+    if (warehouse) {
+      const whIcon = L.divIcon({
+        html: `<div style="position:relative;"><div style="width:36px;height:36px;background:#7f1d1d;border:3px solid #fff;border-radius:8px;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 12px rgba(0,0,0,0.4);"><span style="font-size:18px;">🏭</span></div><div style="position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);white-space:nowrap;background:#7f1d1d;color:#fff;padding:1px 6px;border-radius:6px;font-size:8px;font-weight:800;font-family:system-ui;box-shadow:0 1px 4px rgba(0,0,0,0.2);">ALMACÉN</div></div>`,
+        className: '', iconSize: [36, 54], iconAnchor: [18, 36],
+      });
+      const whM = L.marker([warehouse.lat, warehouse.lng], { icon: whIcon, zIndexOffset: 2500 }).addTo(mapInstRef.current);
+      whM.bindPopup(`<div style="font-family:system-ui;min-width:180px;"><strong style="font-size:13px;">Almacén de Destino</strong><div style="font-size:11px;color:#666;margin-top:2px;">${warehouse.name}</div><div style="margin-top:4px;font-size:10px;color:#7f1d1d;font-weight:600;">Destino final de la ruta</div></div>`);
+      bounds.push([warehouse.lat, warehouse.lng]); markersRef.current.push(whM);
+    }
 
     // ─── PUNTOS DE PARTIDA de cada chofer (estrellas naranja) ───
     drivers.filter(d => d.puntoPartidaLat && d.puntoPartidaLng).forEach((d, idx) => {
@@ -494,13 +537,15 @@ export default function CargoCubaPage() {
       });
       const dM = L.marker([d.lat, d.lng], { icon: pulseIcon, zIndexOffset: 3000 }).addTo(mapInstRef.current);
       const distFromBase = distMilesFromBase(d.lat, d.lng).toFixed(1);
+      const speed = driverSpeedsRef.current.get(d.phone) || 0;
+      const speedHtml = speed > 0 ? `<div style="font-size:11px;color:#16a34a;font-weight:700;margin-top:2px;">${speed} mph</div>` : '';
 
       let instHtml = '';
       if (hasInst) {
         instHtml = `<div style="margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff7ed,#ffedd5);border-radius:12px;border:1.5px solid #fdba74;">${d.mensaje ? `<div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:6px;"><span style="font-size:14px;">💬</span><div><div style="font-size:9px;color:#92400e;font-weight:600;text-transform:uppercase;">Mensaje</div><div style="font-size:12px;color:#1c1917;font-weight:700;">${d.mensaje}</div></div></div>` : ''}${d.direccionRecojo ? `<div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:6px;"><span style="font-size:14px;">📍</span><div><div style="font-size:9px;color:#92400e;font-weight:600;text-transform:uppercase;">Recogo en</div><div style="font-size:12px;color:#1c1917;font-weight:700;">${d.direccionRecojo}</div></div></div>` : ''}${d.precioServicio ? `<div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:6px;"><span style="font-size:14px;">💰</span><div><div style="font-size:9px;color:#92400e;font-weight:600;text-transform:uppercase;">Cobro por servicio</div><div style="font-size:14px;color:#ea580c;font-weight:800;">$${d.precioServicio}</div></div></div>` : ''}${d.comunidad ? `<div style="display:flex;align-items:flex-start;gap:6px;"><span style="font-size:14px;">🏘️</span><div><div style="font-size:9px;color:#92400e;font-weight:600;text-transform:uppercase;">Comunidad</div><div style="font-size:12px;color:#1c1917;font-weight:700;">${d.comunidad}</div></div></div>` : ''}</div>`;
       }
 
-      dM.bindPopup(`<div style="font-family:system-ui;min-width:240px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><div style="width:36px;height:36px;background:${mc};border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><span style="font-size:18px;">🚛</span></div><div><strong style="font-size:14px;color:#111;">${d.nombre}</strong><div style="font-size:10px;color:${mc};font-weight:700;display:flex;align-items:center;gap:4px;"><span style="width:6px;height:6px;border-radius:50%;background:#22c55e;display:inline-block;"></span>EN VIVO${hasInst ? ' · MODO COMUNITARIO' : ''}</div></div></div><div style="font-size:11px;color:#666;">${d.phone} · ${distFromBase} mi de la Base</div>${instHtml}<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;"><a href="https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lng}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border-radius:8px;background:#4285f4;color:#fff;font-size:11px;font-weight:600;text-decoration:none;">Google Maps</a><a href="tel:${d.phone}" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border-radius:8px;background:${mc};color:#fff;font-size:11px;font-weight:600;text-decoration:none;">Llamar</a></div></div>`);
+      dM.bindPopup(`<div style="font-family:system-ui;min-width:240px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><div style="width:36px;height:36px;background:${mc};border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><span style="font-size:18px;">🚛</span></div><div><strong style="font-size:14px;color:#111;">${d.nombre}</strong><div style="font-size:10px;color:${mc};font-weight:700;display:flex;align-items:center;gap:4px;"><span style="width:6px;height:6px;border-radius:50%;background:#22c55e;display:inline-block;"></span>EN VIVO${hasInst ? ' · MODO COMUNITARIO' : ''}</div></div></div><div style="font-size:11px;color:#666;">${d.phone} · ${distFromBase} mi de la Base</div>${speedHtml}${instHtml}<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;"><a href="https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lng}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border-radius:8px;background:#4285f4;color:#fff;font-size:11px;font-weight:600;text-decoration:none;">Google Maps</a><a href="tel:${d.phone}" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border-radius:8px;background:${mc};color:#fff;font-size:11px;font-weight:600;text-decoration:none;">Llamar</a></div></div>`);
       bounds.push([d.lat, d.lng]); markersRef.current.push(dM);
     });
 
@@ -957,8 +1002,12 @@ export default function CargoCubaPage() {
       const startLng = selDriver?.puntoPartidaLng ?? BASE_LNG;
       const ordered = optimizeOrder(esperando, startLat, startLng);
       setOptimizedRoute(ordered);
-      const allPoints = [{ lat: startLat, lng: startLng }, ...ordered.map(p => ({ lat: p.lat, lng: p.lng }))];
-      const result = await calcRoute(allPoints);
+      // Build route: origin → pickups → warehouse (if set) → back to origin
+      const routePoints = [{ lat: startLat, lng: startLng }, ...ordered.map(p => ({ lat: p.lat, lng: p.lng }))];
+      if (warehouse) routePoints.push({ lat: warehouse.lat, lng: warehouse.lng });
+      // Optionally add return to origin
+      if (warehouse) routePoints.push({ lat: startLat, lng: startLng });
+      const result = await calcRoute(routePoints);
       setRouteData(result);
       for (let i = 0; i < ordered.length; i++) await updatePickup(ordered[i].id, { ordenRuta: i + 1 });
       const desde = selDriver ? `desde ${selDriver.nombre}` : 'desde la Base';
@@ -997,7 +1046,7 @@ export default function CargoCubaPage() {
 
   const routeStops = routeData && optimizedRoute.length > 0
     ? (() => {
-        const stops: { name: string; distFromPrev: number; cumDist: number; timeFromPrev: number; cumTime: number; distFromOrigin: number; ready?: string }[] = [];
+        const stops: { name: string; type: 'pickup' | 'warehouse' | 'return'; distFromPrev: number; cumDist: number; timeFromPrev: number; cumTime: number; distFromOrigin: number; ready?: string }[] = [];
         let cumD = 0, cumT = 0;
         for (let i = 0; i < optimizedRoute.length; i++) {
           const leg = routeData.legs[i + 1] || { distance: 0, duration: 0 };
@@ -1010,14 +1059,24 @@ export default function CargoCubaPage() {
             cumT += leg.duration;
           }
           stops.push({
-            name: p.nombre,
+            name: p.nombre, type: 'pickup',
             distFromPrev: i === 0 ? (routeData.legs[0]?.distance || 0) : leg.distance,
-            cumDist: cumD,
-            timeFromPrev: i === 0 ? (routeData.legs[0]?.duration || 0) : leg.duration,
-            cumTime: cumT,
-            distFromOrigin: distMiles(p.lat, p.lng, routeOrigin.lat, routeOrigin.lng),
+            cumDist: cumD, timeFromPrev: i === 0 ? (routeData.legs[0]?.duration || 0) : leg.duration,
+            cumTime: cumT, distFromOrigin: distMiles(p.lat, p.lng, routeOrigin.lat, routeOrigin.lng),
             ready: p.horarioReady || undefined,
           });
+        }
+        // Add warehouse stop if set
+        if (warehouse && routeData.legs[optimizedRoute.length + 1]) {
+          const wLeg = routeData.legs[optimizedRoute.length + 1];
+          cumD += wLeg.distance; cumT += wLeg.duration;
+          stops.push({ name: warehouse.name, type: 'warehouse', distFromPrev: wLeg.distance, cumDist: cumD, timeFromPrev: wLeg.duration, cumTime: cumT, distFromOrigin: distMiles(warehouse.lat, warehouse.lng, routeOrigin.lat, routeOrigin.lng) });
+        }
+        // Add return to origin if warehouse was set
+        if (warehouse && routeData.legs[optimizedRoute.length + 2]) {
+          const rLeg = routeData.legs[optimizedRoute.length + 2];
+          cumD += rLeg.distance; cumT += rLeg.duration;
+          stops.push({ name: 'Regreso a Base', type: 'return', distFromPrev: rLeg.distance, cumDist: cumD, timeFromPrev: rLeg.duration, cumTime: cumT, distFromOrigin: 0 });
         }
         return stops;
       })()
@@ -1955,24 +2014,31 @@ export default function CargoCubaPage() {
                   {routeStops.map((stop, i) => (
                     <div key={i}>
                       {/* Leg connector */}
-                      <div className="ml-4 pl-4 border-l-2 border-blue-300 py-1">
+                      <div className={`ml-4 pl-4 border-l-2 py-1 ${stop.type === 'warehouse' ? 'border-red-400' : stop.type === 'return' ? 'border-zinc-400' : 'border-blue-300'}`}>
                         <div className="flex items-center justify-between">
-                          <span className="text-[9px] text-blue-600 font-bold">Tramo {i + 1}</span>
+                          <span className={`text-[9px] font-bold ${stop.type === 'warehouse' ? 'text-red-600' : stop.type === 'return' ? 'text-zinc-500' : 'text-blue-600'}`}>
+                            {stop.type === 'warehouse' ? 'Almacén' : stop.type === 'return' ? 'Regreso' : `Tramo ${i + 1}`}
+                          </span>
                           <div className="flex items-center gap-2">
                             <span className="text-[9px] text-zinc-500">Directa: {(stop.distFromPrev * 0.000621371).toFixed(1)} mi</span>
                             {routeData.legs[i + 1] && <span className="text-[9px] text-blue-600 font-semibold">Ruta: {fmtDist(routeData.legs[i + 1].distance)} · {fmtTime(routeData.legs[i + 1].duration)}</span>}
                           </div>
                         </div>
                       </div>
-                      <div className="bg-white border border-zinc-200 rounded-xl p-3 flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">{i + 1}</div>
+                      <div className={`border rounded-xl p-3 flex items-center gap-3 ${stop.type === 'warehouse' ? 'bg-red-50 border-red-200' : stop.type === 'return' ? 'bg-zinc-50 border-zinc-200' : 'bg-white border-zinc-200'}`}>
+                        <div className={`w-8 h-8 rounded-full text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0 ${stop.type === 'warehouse' ? 'bg-red-700' : stop.type === 'return' ? 'bg-zinc-500' : 'bg-blue-600'}`}>
+                          {stop.type === 'warehouse' ? '🏭' : stop.type === 'return' ? '🏠' : i + 1}
+                        </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-[11px] font-bold text-zinc-800">{stop.name}</p>
+                          <p className={`text-[11px] font-bold ${stop.type === 'warehouse' ? 'text-red-800' : stop.type === 'return' ? 'text-zinc-600' : 'text-zinc-800'}`}>{stop.name}</p>
                           <div className="flex items-center gap-2 mt-0.5">
                             <span className="text-[9px] text-red-500 font-semibold">{stop.distFromOrigin.toFixed(1)} mi del origen</span>
                             {stop.ready && <span className="text-[9px] bg-blue-100 text-blue-700 font-bold px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" />{stop.ready}</span>}
                           </div>
-                          <p className="text-[9px] text-zinc-400 mt-0.5">Acumulado: {fmtDist(stop.cumDist)} · {fmtTime(stop.cumTime)} desde la Base</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <p className="text-[9px] text-zinc-400">Acumulado: {fmtDist(stop.cumDist)} · {fmtTime(stop.cumTime)}</p>
+                            <span className="text-[9px] text-emerald-600 font-bold">Llegada: {absoluteETA(stop.cumTime)}</span>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -2002,6 +2068,61 @@ export default function CargoCubaPage() {
               )}
             </div>
             )}
+
+            {/* ALMACÉN DE DESTINO */}
+            <div className="border-t border-zinc-100 px-4 py-3">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[10px] font-bold text-red-700 flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" /> ALMACÉN DE DESTINO</p>
+                {warehouse && <button onClick={() => setWarehouse(null)} className="text-[9px] text-red-400 hover:text-red-600 font-semibold">Quitar</button>}
+              </div>
+              {warehouse ? (
+                <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                  <div className="w-7 h-7 rounded bg-red-700 text-white text-sm flex items-center justify-center flex-shrink-0">🏭</div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] font-bold text-red-800 truncate">{warehouse.name}</p>
+                    <p className="text-[9px] text-zinc-500">Se agrega como destino final en la ruta optimizada</p>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div className="flex gap-1.5">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-red-400" />
+                      <input
+                        value={whSearchQuery}
+                        onChange={e => {
+                          const v = e.target.value;
+                          setWhSearchQuery(v);
+                          if (v.length < 3) { setWhSuggestions([]); setWhShowSugg(false); return; }
+                          setWhSearching(true); setWhShowSugg(true);
+                          setTimeout(async () => {
+                            const r = await forwardGeocode(v);
+                            setWhSuggestions(r); setWhSearching(false);
+                          }, 300);
+                        }}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); const first = whSuggestions[0]; if (first) { setWarehouse({ lat: parseFloat(first.lat), lng: parseFloat(first.lon), name: first.display_name.split(',').slice(0, 3).join(',') }); setWhShowSugg(false); setWhSuggestions([]); setWhSearchQuery(''); toast.success('Almacén configurado'); } } }}
+                        placeholder="Busca el almacén de destino..."
+                        className="w-full h-9 pl-8 pr-8 rounded-lg border border-red-200 text-[11px] focus:outline-none focus:ring-1 focus:ring-red-300 bg-white"
+                        autoComplete="off"
+                      />
+                      {whSearching && <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-red-500 animate-spin" />}
+                      {!whSearching && whSearchQuery && <button onClick={() => { setWhSearchQuery(''); setWhSuggestions([]); setWhShowSugg(false); }} className="absolute right-2.5 top-1/2 -translate-y-1/2"><X className="h-3.5 w-3.5 text-zinc-400 hover:text-red-500" /></button>}
+                    </div>
+                  </div>
+                  {whShowSugg && whSuggestions.length > 0 && (
+                    <div className="mt-1 bg-white border border-red-200 rounded-lg shadow-lg max-h-32 overflow-y-auto">
+                      {whSuggestions.map((s, i) => (
+                        <button key={i} onClick={() => { setWarehouse({ lat: parseFloat(s.lat), lng: parseFloat(s.lon), name: s.display_name.split(',').slice(0, 3).join(',') }); setWhShowSugg(false); setWhSuggestions([]); setWhSearchQuery(''); toast.success('Almacén configurado'); }}
+                          className="w-full text-left px-3 py-2 hover:bg-red-50 border-b border-zinc-50 last:border-0 flex items-center gap-2 text-[11px] text-zinc-700">
+                          <MapPin className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />{s.display_name.split(',').slice(0, 3).join(',')}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-[9px] text-zinc-400 mt-1">Opcional — se agrega al final de la ruta optimizada</p>
+                </div>
+              )}
+            </div>
 
             {/* Tab: GRUPOS (rutas por chofer desde su punto de partida) */}
             {adminTab === 'grupos' && (
