@@ -20,8 +20,9 @@ export function middleware(request: NextRequest) {
   const method = request.method
 
   // Protect admin API write methods (PUT/DELETE/PATCH)
-  if (['PUT', 'DELETE', 'PATCH'].includes(method) && 
-      (pathname.startsWith('/api/pickups') || pathname.startsWith('/api/drivers'))) {
+  // Drivers PUT is allowed (choferes update their own location/PP)
+  // Pickups PUT/DELETE require admin auth
+  if (['PUT', 'DELETE', 'PATCH'].includes(method) && pathname.startsWith('/api/pickups')) {
     if (!verifyAdmin(request)) {
       return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
     }
