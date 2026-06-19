@@ -704,7 +704,6 @@ export default function CargoCubaPage() {
     ppTimerRef.current = setTimeout(async () => {
       const results = await forwardGeocode(q);
       setPpSuggestions(results); setPpSearching(false);
-      if (results.length === 0) toast.info('Sin resultados. Intenta: nombre de calle + ciudad, o usa el boton GPS.');
     }, 300);
   }, []);
 
@@ -1583,29 +1582,53 @@ export default function CargoCubaPage() {
                     Tu Punto de Partida (Sede)
                   </p>
 
-                  {/* 1. DIRECCION / GOOGLE MAPS LINK (campo principal) */}
+                  {/* 1. DIRECCION / GOOGLE MAPS LINK (campo principal - estilo Uber) */}
                   <div>
-                    <p className="text-[10px] text-blue-500 font-semibold mb-1">Escribe la direccion o pega enlace de Google Maps:</p>
                     <div className="flex gap-1.5">
-                      <input
-                        value={ppSearchQuery}
-                        onChange={e => {
-                          setPpSearchQuery(e.target.value);
-                          const v = e.target.value;
-                          const coords = extractGoogleMapsCoords(v);
-                          if (coords) {
-                            setDriverPPLat(coords.lat); setDriverPPLng(coords.lng);
-                            toast.success('Coordenadas extraidas del enlace');
-                          }
-                        }}
-                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('pp-search-btn')?.click(); } }}
-                        placeholder="456 Pine St, Orlando  o  https://maps.google.com/..."
-                        className="flex-1 h-11 px-3 rounded-lg border-2 border-blue-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400 bg-white font-medium"
-                      />
+                      <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-blue-400" />
+                        <input
+                          value={ppSearchQuery}
+                          onChange={e => {
+                            const v = e.target.value;
+                            const coords = extractGoogleMapsCoords(v);
+                            if (coords) {
+                              setPpSearchQuery(v);
+                              setDriverPPLat(coords.lat); setDriverPPLng(coords.lng);
+                              setPpSuggestions([]); setPpShowSugg(false);
+                              if (ppPreviewRef.current) { ppPreviewRef.current.remove(); ppPreviewRef.current = null; }
+                              if (mapInstRef.current && LRef.current) {
+                                const L = LRef.current;
+                                const icon = L.icon({ iconUrl: pinSVG('#ea580c'), iconSize: [36, 46], iconAnchor: [18, 46], popupAnchor: [0, -46] });
+                                ppPreviewRef.current = L.marker([coords.lat, coords.lng], { icon, zIndexOffset: 5000 }).addTo(mapInstRef.current);
+                                ppPreviewRef.current.bindPopup(`<div style="font-family:system-ui;"><strong style="font-size:12px;">Punto de Google Maps</strong><div style="font-size:10px;color:#ea580c;font-weight:600;">Sede de este chofer</div></div>`).openPopup();
+                                mapInstRef.current.setView([coords.lat, coords.lng], 15, { animate: true });
+                              }
+                              reverseGeocode(coords.lat, coords.lng).then(dir => {
+                                const short = dir ? dir.split(',').slice(0, 3).join(',') : 'Punto de Google Maps';
+                                setDriverPPDir(short); setPpSearchQuery(short);
+                              });
+                              toast.success('Coordenadas extraidas del enlace');
+                            } else {
+                              handlePPSearch(v);
+                            }
+                          }}
+                          onFocus={() => { if (ppSuggestions.length > 0) setPpShowSugg(true); }}
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('pp-search-btn')?.click(); } }}
+                          placeholder="Ej: 456 Pine St, Orlando FL..."
+                          className="w-full h-11 pl-10 pr-10 rounded-lg border-2 border-blue-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400 bg-white font-medium"
+                          autoComplete="off"
+                        />
+                        {ppSearching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-blue-500 animate-spin" />}
+                        {!ppSearching && ppSearchQuery && (
+                          <button onClick={() => { setPpSearchQuery(''); setPpSuggestions([]); setPpShowSugg(false); setDriverPPLat(null); setDriverPPLng(null); setDriverPPDir(''); if (ppPreviewRef.current) { ppPreviewRef.current.remove(); ppPreviewRef.current = null; } }} className="absolute right-3 top-1/2 -translate-y-1/2"><X className="h-4 w-4 text-zinc-400 hover:text-red-500" /></button>
+                        )}
+                      </div>
                       <button id="pp-search-btn" onClick={async () => {
                         const v = ppSearchQuery.trim();
                         if (!v) return;
-                        setPpSearching(true);
+                        if (ppTimerRef.current) clearTimeout(ppTimerRef.current);
+                        setPpSearching(true); setPpShowSugg(false); setPpSuggestions([]);
                         const coords = extractGoogleMapsCoords(v);
                         if (coords) {
                           setDriverPPLat(coords.lat); setDriverPPLng(coords.lng);
@@ -1634,7 +1657,23 @@ export default function CargoCubaPage() {
                         Buscar
                       </button>
                     </div>
-                    <p className="text-[9px] text-blue-400 mt-1">Escribe y pulsa BUSCAR, o pega un enlace de Google Maps</p>
+                    {/* Sugerencias automaticas (igual que formulario cliente) */}
+                    {ppShowSugg && ppSuggestions.length > 0 && (
+                      <div className="mt-1.5 bg-white border border-blue-200 rounded-xl shadow-lg max-h-44 overflow-y-auto">
+                        {ppSuggestions.map((s, i) => (
+                          <button key={i} onClick={() => selectPPSuggestion(s)}
+                            className="w-full text-left px-4 py-2.5 hover:bg-blue-50 border-b border-zinc-50 last:border-0 flex items-start gap-2.5" style={{ touchAction: 'manipulation' }}>
+                            <MapPin className="h-4 w-4 text-orange-500 mt-0.5 flex-shrink-0" />
+                            <span className="text-[13px] text-zinc-700 leading-snug">{s.display_name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {ppShowSugg && !ppSearching && ppSuggestions.length === 0 && ppSearchQuery.length >= 3 && (
+                      <div className="mt-1.5 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700">
+                        Sin resultados. Prueba con: calle, numero, ciudad y estado
+                      </div>
+                    )}
                   </div>
 
                   {/* 2. OPCIONES PEQUEÑAS: GPS + Tocar Mapa */}
