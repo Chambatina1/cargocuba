@@ -416,6 +416,7 @@ export default function CargoCubaPage() {
       distRefMarkerRef.current.bindPopup(`<div style="font-family:system-ui;"><strong style="font-size:13px;">${pickup.nombre}</strong><div style="font-size:11px;color:#dc2626;font-weight:600;margin-top:2px;">Punto de referencia para distancias</div><div style="font-size:10px;color:#666;margin-top:2px;">${pickup.direccion || ''}</div></div>`);
     }
     toast.success(`Referencia: ${pickup.nombre} — todas las distancias se miden desde aqui`);
+    // Auto-calculate distances from new reference point (via useEffect on effectiveRef)
   }, [distRefMode]);
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -581,10 +582,10 @@ export default function CargoCubaPage() {
       } else {
         const estadoLabel = isVerde ? 'En Espera' : 'Recogido';
         const estadoColor = isVerde ? VERDE : MORADO;
-        const distFromBase = distMilesFromBase(p.lat, p.lng).toFixed(1);
+        const distFromRef = haversine(effectiveRef.lat, effectiveRef.lng, p.lat, p.lng) * 0.621371;
         const gmapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`;
         const wazeUrl = `https://waze.com/ul?ll=${p.lat},${p.lng}&navigate=yes`;
-        marker.bindPopup(`<div style="font-family:system-ui;min-width:200px;"><strong style="font-size:13px;">${p.nombre}</strong><div style="font-size:11px;color:#666;margin-top:2px;">${p.direccion}</div><div style="margin-top:4px;font-size:11px;color:#dc2626;font-weight:600;">${distFromBase} mi de la Base</div>${p.horarioReady ? `<div style="margin-top:4px;font-size:11px;color:#2563eb;font-weight:600;">Ready: ${p.horarioReady}</div>` : ''}<div style="margin-top:6px;display:flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:${estadoColor};display:inline-block;"></span><span style="font-size:11px;font-weight:600;color:${estadoColor};">${estadoLabel}</span></div>${p.choferAsignado ? `<div style="font-size:11px;margin-top:4px;color:#555;">Chofer: ${p.choferAsignado}</div>` : ''}<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;"><a href="${gmapsUrl}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:8px;background:#4285f4;color:#fff;font-size:11px;font-weight:600;text-decoration:none;">Google Maps</a><a href="${wazeUrl}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:8px;background:#59c657;color:#fff;font-size:11px;font-weight:600;text-decoration:none;">Waze</a>${p.telefono ? `<a href="tel:${p.telefono}" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:8px;background:#2563eb;color:#fff;font-size:11px;font-weight:600;text-decoration:none;">${p.telefono}</a>` : ''}</div></div>`);
+        marker.bindPopup(`<div style="font-family:system-ui;min-width:200px;"><strong style="font-size:13px;">${p.nombre}</strong><div style="font-size:11px;color:#666;margin-top:2px;">${p.direccion}</div><div style="margin-top:4px;font-size:11px;color:#dc2626;font-weight:600;">${distFromRef.toFixed(1)} mi de ${effectiveRef.name}</div>${p.horarioReady ? `<div style="margin-top:4px;font-size:11px;color:#2563eb;font-weight:600;">Ready: ${p.horarioReady}</div>` : ''}<div style="margin-top:6px;display:flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:${estadoColor};display:inline-block;"></span><span style="font-size:11px;font-weight:600;color:${estadoColor};">${estadoLabel}</span></div>${p.choferAsignado ? `<div style="font-size:11px;margin-top:4px;color:#555;">Chofer: ${p.choferAsignado}</div>` : ''}<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;"><a href="${gmapsUrl}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:8px;background:#4285f4;color:#fff;font-size:11px;font-weight:600;text-decoration:none;">Google Maps</a><a href="${wazeUrl}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:8px;background:#59c657;color:#fff;font-size:11px;font-weight:600;text-decoration:none;">Waze</a>${p.telefono ? `<a href="tel:${p.telefono}" style="display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:8px;background:#2563eb;color:#fff;font-size:11px;font-weight:600;text-decoration:none;">${p.telefono}</a>` : ''}</div></div>`);
       }
       bounds.push([p.lat, p.lng]); markersRef.current.push(marker);
     });
@@ -614,7 +615,7 @@ export default function CargoCubaPage() {
         className: '', iconSize: [isz, isz + (hasInst ? 50 : 0)], iconAnchor: [isz / 2, isz / 2],
       });
       const dM = L.marker([d.lat, d.lng], { icon: pulseIcon, zIndexOffset: 3000 }).addTo(mapInstRef.current);
-      const distFromBase = distMilesFromBase(d.lat, d.lng).toFixed(1);
+      const distFromRef = haversine(effectiveRef.lat, effectiveRef.lng, d.lat, d.lng) * 0.621371;
       const speed = driverSpeedsRef.current.get(d.phone) || 0;
       const speedHtml = speed > 0 ? `<div style="font-size:11px;color:#16a34a;font-weight:700;margin-top:2px;">${speed} mph</div>` : '';
 
@@ -623,7 +624,7 @@ export default function CargoCubaPage() {
         instHtml = `<div style="margin-top:8px;padding:10px;background:linear-gradient(135deg,#fff7ed,#ffedd5);border-radius:12px;border:1.5px solid #fdba74;">${d.mensaje ? `<div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:6px;"><span style="font-size:14px;">💬</span><div><div style="font-size:9px;color:#92400e;font-weight:600;text-transform:uppercase;">Mensaje</div><div style="font-size:12px;color:#1c1917;font-weight:700;">${d.mensaje}</div></div></div>` : ''}${d.direccionRecojo ? `<div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:6px;"><span style="font-size:14px;">📍</span><div><div style="font-size:9px;color:#92400e;font-weight:600;text-transform:uppercase;">Recogo en</div><div style="font-size:12px;color:#1c1917;font-weight:700;">${d.direccionRecojo}</div></div></div>` : ''}${d.precioServicio ? `<div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:6px;"><span style="font-size:14px;">💰</span><div><div style="font-size:9px;color:#92400e;font-weight:600;text-transform:uppercase;">Cobro por servicio</div><div style="font-size:14px;color:#ea580c;font-weight:800;">$${d.precioServicio}</div></div></div>` : ''}${d.comunidad ? `<div style="display:flex;align-items:flex-start;gap:6px;"><span style="font-size:14px;">🏘️</span><div><div style="font-size:9px;color:#92400e;font-weight:600;text-transform:uppercase;">Comunidad</div><div style="font-size:12px;color:#1c1917;font-weight:700;">${d.comunidad}</div></div></div>` : ''}</div>`;
       }
 
-      dM.bindPopup(`<div style="font-family:system-ui;min-width:240px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><div style="width:36px;height:36px;background:${mc};border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><span style="font-size:18px;">🚛</span></div><div><strong style="font-size:14px;color:#111;">${d.nombre}</strong><div style="font-size:10px;color:${mc};font-weight:700;display:flex;align-items:center;gap:4px;"><span style="width:6px;height:6px;border-radius:50%;background:#22c55e;display:inline-block;"></span>EN VIVO${hasInst ? ' · MODO COMUNITARIO' : ''}</div></div></div><div style="font-size:11px;color:#666;">${d.phone} · ${distFromBase} mi de la Base</div>${speedHtml}${instHtml}<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;"><a href="https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lng}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border-radius:8px;background:#4285f4;color:#fff;font-size:11px;font-weight:600;text-decoration:none;">Google Maps</a><a href="tel:${d.phone}" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border-radius:8px;background:${mc};color:#fff;font-size:11px;font-weight:600;text-decoration:none;">Llamar</a></div></div>`);
+      dM.bindPopup(`<div style="font-family:system-ui;min-width:240px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><div style="width:36px;height:36px;background:${mc};border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><span style="font-size:18px;">🚛</span></div><div><strong style="font-size:14px;color:#111;">${d.nombre}</strong><div style="font-size:10px;color:${mc};font-weight:700;display:flex;align-items:center;gap:4px;"><span style="width:6px;height:6px;border-radius:50%;background:#22c55e;display:inline-block;"></span>EN VIVO${hasInst ? ' · MODO COMUNITARIO' : ''}</div></div></div><div style="font-size:11px;color:#666;">${d.phone} · ${distFromRef.toFixed(1)} mi de ${effectiveRef.name}</div>${speedHtml}${instHtml}<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;"><a href="https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lng}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border-radius:8px;background:#4285f4;color:#fff;font-size:11px;font-weight:600;text-decoration:none;">Google Maps</a><a href="tel:${d.phone}" style="display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border-radius:8px;background:${mc};color:#fff;font-size:11px;font-weight:600;text-decoration:none;">Llamar</a></div></div>`);
       bounds.push([d.lat, d.lng]); markersRef.current.push(dM);
     });
 
@@ -638,7 +639,7 @@ export default function CargoCubaPage() {
       }
     }
     setTimeout(() => mapInstRef.current?.invalidateSize(), 150);
-  }, [pickups, drivers, optimizedRoute, routeData, panel, mapReady, followingDriver, selectMode, selectedIds, selectRouteData, handleMarkerTap, distRefMode, handleDistRefTap]);
+  }, [pickups, drivers, optimizedRoute, routeData, panel, mapReady, followingDriver, selectMode, selectedIds, selectRouteData, handleMarkerTap, distRefMode, handleDistRefTap, effectiveRef]);
 
   useEffect(() => { setTimeout(() => { initMap(); renderMarkers(); }, 200); }, [initMap, renderMarkers]);
   useEffect(() => { if (mapInstRef.current) renderMarkers(); }, [renderMarkers]);
@@ -1057,9 +1058,16 @@ export default function CargoCubaPage() {
     return matrix;
   }, [pickups]);
 
-  // Auto-compute distances when effectiveRef changes (if matrix was already computed)
+  // Auto-compute distances when effectiveRef changes (especially when distRefPoint is set)
   useEffect(() => {
-    if (distMatrix.length > 0) {
+    if (distRefPoint) {
+      const active = pickups.filter(p => p.estado !== 'cancelado');
+      if (active.length >= 1) {
+        setDistMatrix(computeDistMatrix(effectiveRef.lat, effectiveRef.lng, effectiveRef.name));
+        setAdminTab('distancias');
+      }
+    } else if (distMatrix.length > 0) {
+      // Recompute when switching back to driver/base reference
       setDistMatrix(computeDistMatrix(effectiveRef.lat, effectiveRef.lng, effectiveRef.name));
     }
   }, [effectiveRef.lat, effectiveRef.lng, effectiveRef.name]);
