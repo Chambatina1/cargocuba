@@ -502,8 +502,10 @@ export default function CargoCubaPage() {
       bounds.push([d.lat, d.lng]); markersRef.current.push(dM);
     });
 
-    // Only auto-fit if NOT following a driver
-    if (!followingDriver) {
+    // Only auto-fit if NOT following a driver AND user hasn't placed a preview pin
+    // (don't steal the map from the user who is selecting an address)
+    const hasPreview = previewMarkerRef.current !== null;
+    if (!followingDriver && !hasPreview) {
       if (bounds.length > 1) {
         mapInstRef.current.fitBounds(bounds, { padding: [60, 60], maxZoom: 13 });
       } else {
@@ -552,21 +554,26 @@ export default function CargoCubaPage() {
   // ═══════════════════════════════════════════════════════════════════════════
   // CLIENT: ADDRESS SEARCH + GPS + SUBMIT
   // ═══════════════════════════════════════════════════════════════════════════
-  const selectSuggestion = useCallback((s: GeoSuggestion) => {
+  const selectSuggestion = useCallback((s: GeoSuggestion, overrideAddr?: string) => {
     const lat = parseFloat(s.lat), lng = parseFloat(s.lon);
-    const shortAddr = s.display_name.split(',').slice(0, 3).join(',');
-    setForm(f => ({ ...f, lat, lng, direccion: shortAddr }));
-    setSearchQuery(shortAddr); setShowSuggestions(false); setSuggestions([]);
+    // Keep the user's original typed address, NOT the geocoder's display_name.
+    // The geocoder might return a slightly different number (e.g. user typed 8310, Census returns 8498).
+    // We take the COORDINATES from the geocoder but preserve the user's text.
+    const userAddr = (overrideAddr || searchQuery).trim();
+    const geoAddr = s.display_name.split(',').slice(0, 3).join(',').trim();
+    // Use user's text as primary, geocoder's as reference in the confirmed field
+    setForm(f => ({ ...f, lat, lng, direccion: userAddr }));
+    setSearchQuery(userAddr); setShowSuggestions(false); setSuggestions([]);
     // Place RED preview pin on map (user stays in form, no panel close)
     if (previewMarkerRef.current) { previewMarkerRef.current.remove(); previewMarkerRef.current = null; }
     if (mapInstRef.current && LRef.current) {
       const L = LRef.current;
       const icon = L.icon({ iconUrl: pinSVG('#dc2626'), iconSize: [36, 46], iconAnchor: [18, 46], popupAnchor: [0, -46] });
       previewMarkerRef.current = L.marker([lat, lng], { icon, zIndexOffset: 5000 }).addTo(mapInstRef.current);
-      previewMarkerRef.current.bindPopup(`<div style="font-family:system-ui;"><strong style="font-size:12px;">Tu direccion</strong><div style="font-size:10px;color:#dc2626;font-weight:600;">Punto rojo = se hara VERDE al enviar</div></div>`).openPopup();
+      previewMarkerRef.current.bindPopup(`<div style="font-family:system-ui;"><strong style="font-size:12px;">${userAddr}</strong>${geoAddr !== userAddr ? `<div style="font-size:9px;color:#888;margin-top:2px;">Referencia: ${geoAddr}</div>` : ''}<div style="font-size:10px;color:#dc2626;font-weight:600;margin-top:4px;">Punto rojo = se hara VERDE al enviar</div></div>`).openPopup();
       mapInstRef.current.setView([lat, lng], 16, { animate: true });
     }
-  }, []);
+  }, [searchQuery]);
 
   // Auto-search as user types (shows suggestions, NO auto-select, NO panel close)
   const handleSearchAddress = useCallback((q: string) => {
@@ -629,7 +636,7 @@ export default function CargoCubaPage() {
     const results = await forwardGeocode(q);
     setSearching(false);
     if (results.length > 0) {
-      selectSuggestion(results[0]);
+      selectSuggestion(results[0], q);
       toast.success('Direccion encontrada');
     } else {
       toast.error('No encontrada. Escribe: calle + ciudad');
@@ -696,21 +703,23 @@ export default function CargoCubaPage() {
     }, 300);
   }, []);
 
-  const selectPPSuggestion = useCallback((s: GeoSuggestion) => {
+  const selectPPSuggestion = useCallback((s: GeoSuggestion, overrideAddr?: string) => {
     const lat = parseFloat(s.lat), lng = parseFloat(s.lon);
-    const shortAddr = s.display_name.split(',').slice(0, 3).join(',');
-    setDriverPPLat(lat); setDriverPPLng(lng); setDriverPPDir(shortAddr);
-    setPpSearchQuery(shortAddr); setPpShowSugg(false); setPpSuggestions([]);
+    // Keep user's typed address like we do for client form
+    const userAddr = (overrideAddr || ppSearchQuery).trim();
+    const geoAddr = s.display_name.split(',').slice(0, 3).join(',').trim();
+    setDriverPPLat(lat); setDriverPPLng(lng); setDriverPPDir(userAddr);
+    setPpSearchQuery(userAddr); setPpShowSugg(false); setPpSuggestions([]);
     // Show preview on map
     if (ppPreviewRef.current) { ppPreviewRef.current.remove(); ppPreviewRef.current = null; }
     if (mapInstRef.current && LRef.current) {
       const L = LRef.current;
       const icon = L.icon({ iconUrl: pinSVG('#ea580c'), iconSize: [36, 46], iconAnchor: [18, 46], popupAnchor: [0, -46] });
       ppPreviewRef.current = L.marker([lat, lng], { icon, zIndexOffset: 5000 }).addTo(mapInstRef.current);
-      ppPreviewRef.current.bindPopup('<div style="font-family:system-ui;"><strong style="font-size:12px;">Punto de Partida</strong><div style="font-size:10px;color:#ea580c;font-weight:600;">Sede de este chofer</div></div>').openPopup();
+      ppPreviewRef.current.bindPopup(`<div style="font-family:system-ui;"><strong style="font-size:12px;">${userAddr}</strong>${geoAddr !== userAddr ? `<div style="font-size:9px;color:#888;margin-top:2px;">Referencia: ${geoAddr}</div>` : ''}<div style="font-size:10px;color:#ea580c;font-weight:600;">Sede de este chofer</div></div>`).openPopup();
       mapInstRef.current.setView([lat, lng], 15, { animate: true });
     }
-  }, []);
+  }, [ppSearchQuery]);
 
   const setPPFromGPS = useCallback(() => {
     if (!navigator.geolocation) { toast.error('GPS no disponible'); return; }
@@ -1611,7 +1620,7 @@ export default function CargoCubaPage() {
                         } else {
                           const results = await forwardGeocode(v);
                           setPpSearching(false);
-                          if (results.length > 0) { selectPPSuggestion(results[0]); toast.success('Punto de partida ubicado en el mapa'); }
+                          if (results.length > 0) { selectPPSuggestion(results[0], v); toast.success('Punto de partida ubicado en el mapa'); }
                           else { toast.error('No encontrada. Escribe: calle + ciudad, o pega enlace de Google Maps.'); }
                         }
                       }}
