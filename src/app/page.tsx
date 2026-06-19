@@ -400,24 +400,51 @@ export default function CargoCubaPage() {
     else { setSelectMode(false); setSelectedIds([]); setSelectRouteData(null); setPanel('none'); }
   }, [distRefMode]);
 
-  const handleDistRefTap = useCallback((pickup: { id: number; nombre: string; lat: number; lng: number }) => {
-    if (!distRefMode) return;
-    setDistRefPoint({ lat: pickup.lat, lng: pickup.lng, name: pickup.nombre, pickupId: pickup.id });
-    setDistRefMode(false);
-    // Add marker
+  // Set reference point on map (works for both marker taps and raw map clicks)
+  const setRefPointOnMap = useCallback(async (lat: number, lng: number, name?: string) => {
     if (distRefMarkerRef.current) { distRefMarkerRef.current.remove(); distRefMarkerRef.current = null; }
+    // Reverse geocode if no name provided
+    let pointName = name || 'Punto de referencia';
+    if (!name) {
+      try {
+        const r = await fetch(`/api/geocode/reverse?lat=${lat}&lon=${lng}`);
+        const j = await r.json();
+        if (j.display_name) {
+          const parts = j.display_name.split(',');
+          pointName = parts.slice(0, 3).join(',').trim();
+        }
+      } catch {}
+    }
+    setDistRefPoint({ lat, lng, name: pointName });
+    setDistRefMode(false);
+    // Add red reference marker
     if (mapInstRef.current && LRef.current) {
       const L = LRef.current;
       const icon = L.divIcon({
         html: `<div style="position:relative;width:40px;height:40px;display:flex;align-items:center;justify-content:center;"><div style="width:28px;height:28px;background:#dc2626;border:3px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 12px rgba(220,38,38,0.5);z-index:2;"><span style="font-size:14px;">📍</span></div><div style="position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);white-space:nowrap;background:#dc2626;color:#fff;padding:1px 8px;border-radius:6px;font-size:8px;font-weight:800;font-family:system-ui;box-shadow:0 1px 4px rgba(0,0,0,0.2);">REFERENCIA</div></div>`,
         className: '', iconSize: [40, 58], iconAnchor: [20, 20],
       });
-      distRefMarkerRef.current = L.marker([pickup.lat, pickup.lng], { icon, zIndexOffset: 4000 }).addTo(mapInstRef.current);
-      distRefMarkerRef.current.bindPopup(`<div style="font-family:system-ui;"><strong style="font-size:13px;">${pickup.nombre}</strong><div style="font-size:11px;color:#dc2626;font-weight:600;margin-top:2px;">Punto de referencia para distancias</div><div style="font-size:10px;color:#666;margin-top:2px;">${pickup.direccion || ''}</div></div>`);
+      distRefMarkerRef.current = L.marker([lat, lng], { icon, zIndexOffset: 4000 }).addTo(mapInstRef.current);
+      distRefMarkerRef.current.bindPopup(`<div style="font-family:system-ui;"><strong style="font-size:13px;">${pointName}</strong><div style="font-size:11px;color:#dc2626;font-weight:600;margin-top:2px;">Punto de referencia para distancias</div></div>`);
     }
-    toast.success(`Referencia: ${pickup.nombre} — todas las distancias se miden desde aqui`);
-    // Auto-calculate distances from new reference point (via useEffect on effectiveRef)
-  }, [distRefMode]);
+    toast.success(`Referencia: ${pointName} — todas las distancias se miden desde aqui`);
+  }, []);
+
+  // Handle tap on existing marker in distRef mode
+  const handleDistRefTap = useCallback((pickup: { id: number; nombre: string; lat: number; lng: number }) => {
+    if (!distRefMode) return;
+    setRefPointOnMap(pickup.lat, pickup.lng, pickup.nombre);
+  }, [distRefMode, setRefPointOnMap]);
+
+  // Handle tap on raw map (any point) in distRef mode
+  useEffect(() => {
+    if (!mapInstRef.current || !distRefMode) return;
+    const handler = (e: any) => {
+      setRefPointOnMap(e.latlng.lat, e.latlng.lng);
+    };
+    mapInstRef.current.on('click', handler);
+    return () => { mapInstRef.current?.off('click', handler); };
+  }, [mapInstRef.current, distRefMode, setRefPointOnMap]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // SELECT MODE: tap markers to pick, measure distances, optimize
@@ -1654,8 +1681,8 @@ export default function CargoCubaPage() {
                   <MapPin className="h-4 w-4 text-white animate-bounce" />
                 </div>
                 <div>
-                  <span className="text-xs font-bold text-red-800 block">Toca un marcador para poner referencia</span>
-                  <span className="text-[9px] text-red-500">Ese punto sera el origen para calcular todas las distancias</span>
+                  <span className="text-xs font-bold text-red-800 block">Toca el mapa para poner referencia</span>
+                  <span className="text-[9px] text-red-500">Cualquier punto sera el origen para calcular distancias</span>
                 </div>
               </div>
               <button onClick={toggleDistRefMode}
