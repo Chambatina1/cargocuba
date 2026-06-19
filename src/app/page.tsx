@@ -207,6 +207,7 @@ export default function CargoCubaPage() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previewMarkerRef = useRef<any>(null);
+  const mapViewInitialized = useRef(false); // only auto-fit map on FIRST render
 
   // ─── Driver mode ───
   const [driverPhone, setDriverPhone] = useState('');
@@ -503,10 +504,10 @@ export default function CargoCubaPage() {
       bounds.push([d.lat, d.lng]); markersRef.current.push(dM);
     });
 
-    // Only auto-fit if NOT following a driver AND user hasn't placed a preview pin
-    // (don't steal the map from the user who is selecting an address)
-    const hasPreview = previewMarkerRef.current !== null || ppPreviewRef.current !== null;
-    if (!followingDriver && !hasPreview) {
+    // Only auto-fit on FIRST render — never steal the map from the user after that
+    // (data refreshes every 4s, but the user's zoom/pan must be respected)
+    if (!followingDriver && !mapViewInitialized.current) {
+      mapViewInitialized.current = true;
       if (bounds.length > 1) {
         mapInstRef.current.fitBounds(bounds, { padding: [60, 60], maxZoom: 13 });
       } else {
@@ -518,6 +519,9 @@ export default function CargoCubaPage() {
 
   useEffect(() => { setTimeout(() => { initMap(); renderMarkers(); }, 200); }, [initMap, renderMarkers]);
   useEffect(() => { if (mapInstRef.current) renderMarkers(); }, [renderMarkers]);
+
+  // When closing a panel, allow map to re-fit once (so user sees all markers)
+  useEffect(() => { if (panel === 'none') mapViewInitialized.current = false; }, [panel]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // FOLLOW DRIVER BUTTON HANDLER
