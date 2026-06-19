@@ -148,14 +148,13 @@ async function censusGeocode(query: string): Promise<GeoSuggestion | null> {
   } catch { return null; }
 }
 
-// ─── Forward Geocode (Nominatim) with multi-strategy fallback ─────────
+// ─── Nominatim search ───────────────────────────────────────────────
 async function nominatimSearch(query: string, opts?: { viewbox?: string; bounded?: number }): Promise<GeoSuggestion[]> {
   try {
     let url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=8&accept-language=es,en`;
     if (opts?.viewbox) url += `&viewbox=${opts.viewbox}&bounded=${opts.bounded ?? 0}`;
     const r = await fetch(url, { headers: { 'User-Agent': 'CargoCuba-App/1.0' } });
     const j = await r.json();
-    // Filter results that have CJK characters and clean display names
     return ((j || []).slice(0, 8) as GeoSuggestion[]).map(s => ({
       ...s,
       display_name: cleanAddress(s.display_name)
@@ -163,27 +162,32 @@ async function nominatimSearch(query: string, opts?: { viewbox?: string; bounded
   } catch { return []; }
 }
 
+// ─── Master search: Census (US) + Nominatim (world) in PARALLEL ─────
 async function forwardGeocode(query: string): Promise<GeoSuggestion[]> {
-  // Strategy 0: US Census API first (best for US addresses)
-  const censusResult = await censusGeocode(query);
-  if (censusResult) return [censusResult];
+  // Run Census + Nominatim in parallel for speed
+  const [censusResult, nomDirect, nomFlorida, nomCuba] = await Promise.all([
+    censusGeocode(query),
+    nominatimSearch(query),
+    nominatimSearch(`${query}, Florida, USA`),
+    nominatimSearch(`${query}, Cuba`),
+  ]);
 
-  // Strategy 1: Direct Nominatim search
-  let results = await nominatimSearch(query);
-  if (results.length > 0) return results;
+  // Priority: Census first (most precise for US), then Nominatim results
+  const all: GeoSuggestion[] = [];
+  if (censusResult) all.push(censusResult);
+  // Deduplicate by lat,lon
+  const seen = new Set<string>();
+  const addUnique = (list: GeoSuggestion[]) => {
+    for (const s of list) {
+      const key = `${s.lat},${s.lon}`;
+      if (!seen.has(key)) { seen.add(key); all.push(s); }
+    }
+  };
+  addUnique(nomDirect);
+  addUnique(nomFlorida);
+  addUnique(nomCuba);
 
-  // Strategy 2: Append "Florida, USA"
-  results = await nominatimSearch(`${query}, Florida, USA`);
-  if (results.length > 0) return results;
-
-  // Strategy 3: Append "Cuba"
-  results = await nominatimSearch(`${query}, Cuba`);
-  if (results.length > 0) return results;
-
-  // Strategy 4: Viewbox Florida/Cuba
-  results = await nominatimSearch(query, { viewbox: '-87,24,-79,31', bounded: 0 });
-
-  return results;
+  return all;
 }
 
 // ─── Reverse Geocode ───────────────────────────────────────────────────────
@@ -628,7 +632,7 @@ export default function CargoCubaPage() {
   const handleSearchAddress = useCallback((q: string) => {
     setSearchQuery(q);
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    if (q.length < 3) { setSuggestions([]); setShowSuggestions(false); return; }
+    if (q.length < 4) { setSuggestions([]); setShowSuggestions(false); return; }
     setSearching(true); setShowSuggestions(true);
     searchTimerRef.current = setTimeout(async () => {
       // If it looks like a Google Maps link, just mark it directly
@@ -652,7 +656,8 @@ export default function CargoCubaPage() {
       // Regular address: show suggestions only, let user pick
       const results = await forwardGeocode(q);
       setSuggestions(results); setSearching(false);
-    }, 500);
+      // No toast on auto-search - just show suggestions or empty
+    }, 800);
   }, []);
 
   // Explicit search on button press / Enter key
