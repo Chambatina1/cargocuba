@@ -26,6 +26,7 @@ model PickupRequest {
   lng           Float
   notas         String?
   horarioReady  String?                          // "HH:MM" - hora que el cliente esta listo
+  area          String?                          // Miami, West, Pan, Beach, etc.
   estado        String   @default("esperando")  // esperando, recogido, cancelado
   origen        String   @default("cliente")    // cliente, oficina
   choferAsignado String?

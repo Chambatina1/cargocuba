@@ -15,7 +15,7 @@ interface Pickup {
   lat: number; lng: number; notas: string | null; estado: string;
   choferAsignado: string | null; ordenRuta: number | null;
   fechaRecogida: string | null; horarioReady: string | null;
-  createdAt: string; updatedAt: string;
+  area: string | null; createdAt: string; updatedAt: string;
 }
 
 interface GeoSuggestion {
@@ -225,7 +225,7 @@ export default function CargoCubaPage() {
   const [optimizing, setOptimizing] = useState(false);
 
   // ─── Client form ───
-  const [form, setForm] = useState({ nombre: '', telefono: '', direccion: '', lat: 0, lng: 0, notas: '', horarioReady: '' });
+  const [form, setForm] = useState({ nombre: '', telefono: '', direccion: '', lat: 0, lng: 0, notas: '', horarioReady: '', area: '' });
   const [locating, setLocating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -277,7 +277,8 @@ export default function CargoCubaPage() {
 
   // ─── Admin (no password — direct access) ───
   const [adminChofer, setAdminChofer] = useState('');
-  const [adminTab, setAdminTab] = useState<'lista' | 'distancias' | 'ruta' | 'grupos'>('lista');
+  const [adminTab, setAdminTab] = useState<'lista' | 'distancias' | 'ruta' | 'grupos' | 'areas'>('lista');
+  const [adminAreaFilter, setAdminAreaFilter] = useState('');
   const [distMatrix, setDistMatrix] = useState<{ from: string; to: string; distMi: number }[]>([]);
   const [calculatingDist, setCalculatingDist] = useState(false);
   const [scheduledDriver, setScheduledDriver] = useState('');
@@ -758,12 +759,12 @@ export default function CargoCubaPage() {
     try {
       const r = await fetch('/api/pickups', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, direccion: form.direccion || `${form.lat.toFixed(4)}, ${form.lng.toFixed(4)}`, horarioReady: form.horarioReady || null }),
+        body: JSON.stringify({ ...form, direccion: form.direccion || `${form.lat.toFixed(4)}, ${form.lng.toFixed(4)}`, horarioReady: form.horarioReady || null, area: form.area || null }),
       });
       const j = await r.json();
       if (j.ok) {
         toast.success('Tu punto esta VERDE en el mapa' + (form.horarioReady ? ` (Ready: ${form.horarioReady})` : ''));
-        setForm({ nombre: '', telefono: '', direccion: '', lat: 0, lng: 0, notas: '', horarioReady: '' });
+        setForm({ nombre: '', telefono: '', direccion: '', lat: 0, lng: 0, notas: '', horarioReady: '', area: '' });
         setSearchQuery(''); setSuggestions([]); setShowSuggestions(false);
         setPanel('none'); load();
       } else toast.error(j.error || 'Error');
@@ -1649,6 +1650,18 @@ export default function CargoCubaPage() {
                 <div className="text-[10px] text-zinc-500 leading-tight px-1">Hora<br/>Ready</div>
               </div>
 
+              {/* Area / Localidad */}
+              <select value={form.area} onChange={e => setForm(f => ({ ...f, area: e.target.value }))}
+                className="w-full h-11 px-4 rounded-xl border border-emerald-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 bg-emerald-50/50 font-medium">
+                <option value="">Area / Localidad (opcional)</option>
+                <option value="Miami">Miami</option>
+                <option value="West">West (Hialeah/Doral)</option>
+                <option value="Pan">Pan (Pembroke Pines)</option>
+                <option value="Beach">Beach (Miami Beach)</option>
+                <option value="North">North (Broward)</option>
+                <option value="Kendall">Kendall</option>
+              </select>
+
               <textarea value={form.notas} onChange={e => setForm(f => ({ ...f, notas: e.target.value }))} placeholder="Notas (tamano, instrucciones...)" rows={2} className="w-full px-4 py-3 rounded-xl border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 bg-zinc-50 resize-none" />
 
               {/* Opciones alternativas */}
@@ -1957,12 +1970,12 @@ export default function CargoCubaPage() {
             )}
 
             {/* Admin tabs */}
-            <div className="px-4 py-1.5 border-b border-zinc-100 flex items-center gap-1 bg-zinc-50/80 flex-shrink-0">
-              {(['lista', 'distancias', 'ruta', 'grupos'] as const).map(t => (
+            <div className="px-4 py-1.5 border-b border-zinc-100 flex items-center gap-1 bg-zinc-50/80 flex-shrink-0 overflow-x-auto">
+              {(['lista', 'areas', 'distancias', 'ruta', 'grupos'] as const).map(t => (
                 <button key={t} onClick={() => setAdminTab(t)}
-                  className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${adminTab === t ? 'bg-white text-zinc-900 shadow-sm border border-zinc-200' : 'text-zinc-400 hover:text-zinc-600'}`}
+                  className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all flex-shrink-0 ${adminTab === t ? 'bg-white text-zinc-900 shadow-sm border border-zinc-200' : 'text-zinc-400 hover:text-zinc-600'}`}
                   style={{ touchAction: 'manipulation' }}>
-                  {t === 'lista' ? `Lista (${adminChofer ? pickups.filter(p => p.choferAsignado === adminChofer).length : pickups.length})` : t === 'distancias' ? 'Distancias' : t === 'ruta' ? 'Ruta' : `Grupos (${choferesConAsignados.length})`}
+                  {t === 'lista' ? `Lista (${adminChofer ? pickups.filter(p => p.choferAsignado === adminChofer).length : pickups.length})` : t === 'areas' ? 'Areas' : t === 'distancias' ? 'Distancias' : t === 'ruta' ? 'Ruta' : `Grupos (${choferesConAsignados.length})`}
                 </button>
               ))}
               <div className="flex-1" />
@@ -2046,6 +2059,140 @@ export default function CargoCubaPage() {
                   </button>
                 </div>
               </div>
+            )}
+
+            {/* Tab: ÁREAS / LOCALIDADES */}
+            {adminTab === 'areas' && (
+            <div className="flex-1 overflow-y-auto p-3 space-y-3">
+              {/* Area filter bar */}
+              <div className="flex items-center gap-1.5">
+                <select value={adminAreaFilter} onChange={e => setAdminAreaFilter(e.target.value)}
+                  className="flex-1 h-8 px-3 rounded-lg border border-emerald-200 text-[11px] font-semibold bg-emerald-50/50 focus:outline-none focus:ring-1 focus:ring-emerald-300">
+                  <option value="">Todas las areas</option>
+                  {[...new Set(pickups.filter(p => p.area).map(p => p.area!))].map(a => <option key={a} value={a}>{a}</option>)}
+                </select>
+                <span className="text-[9px] font-bold text-zinc-400">{pickups.filter(p => p.area && p.estado !== 'cancelado').length} con area</span>
+              </div>
+              {(() => {
+                const active = pickups.filter(p => p.estado !== 'cancelado');
+                // Group by area
+                const areaMap = new Map<string, typeof active>();
+                const noArea: typeof active = [];
+                for (const p of active) {
+                  if (!p.area) { noArea.push(p); continue; }
+                  if (adminAreaFilter && p.area !== adminAreaFilter) continue;
+                  if (!areaMap.has(p.area)) areaMap.set(p.area, []);
+                  areaMap.get(p.area)!.push(p);
+                }
+                const areas = [...areaMap.entries()].sort((a, b) => b[1].length - a[1].length);
+                if (areas.length === 0 && noArea.length === 0) return (
+                  <div className="p-8 text-center">
+                    <MapIcon className="h-7 w-7 text-zinc-300 mx-auto mb-2" />
+                    <p className="text-xs text-zinc-400">Sin clientes con area asignada</p>
+                    <p className="text-[10px] text-zinc-300 mt-1">Asigna un area a cada cliente al crearlo o desde la Lista</p>
+                  </div>
+                );
+                return (
+                  <>
+                    {areas.map(([areaName, areaPickups]) => {
+                      const areaColor = ['bg-blue-500', 'bg-emerald-500', 'bg-orange-500', 'bg-purple-500', 'bg-pink-500', 'bg-cyan-500'][areas.findIndex(a => a[0] === areaName) % 6];
+                      const areaBg = ['bg-blue-50', 'bg-emerald-50', 'bg-orange-50', 'bg-purple-50', 'bg-pink-50', 'bg-cyan-50'][areas.findIndex(a => a[0] === areaName) % 6];
+                      const areaBorder = ['border-blue-200', 'border-emerald-200', 'border-orange-200', 'border-purple-200', 'border-pink-200', 'border-cyan-200'][areas.findIndex(a => a[0] === areaName) % 6];
+                      // Calculate distances from base to this area (avg)
+                      const avgDist = (areaPickups.reduce((s, p) => s + haversine(BASE_LAT, BASE_LNG, p.lat, p.lng) * 0.621371, 0) / areaPickups.length).toFixed(1);
+                      return (
+                        <div key={areaName} className={`border ${areaBorder} rounded-xl overflow-hidden`}>
+                          {/* Area header */}
+                          <div className={`${areaBg} px-3 py-2.5 flex items-center gap-2.5`}>
+                            <div className={`w-7 h-7 rounded-full ${areaColor} text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0`}>{areaName.charAt(0)}</div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[12px] font-bold text-zinc-800">{areaName}</p>
+                              <p className="text-[9px] text-zinc-500">{areaPickups.length} cliente{areaPickups.length !== 1 ? 's' : ''} · {avgDist} mi promedio de la Base</p>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-full">{areaPickups.filter(p => p.estado === 'esperando').length} espera</span>
+                              <span className="text-[9px] font-bold text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded-full">{areaPickups.filter(p => p.estado === 'recogido').length} recog</span>
+                            </div>
+                          </div>
+                          {/* Client list with distances between them */}
+                          <div className="divide-y divide-zinc-50">
+                            {areaPickups.sort((a, b) => a.nombre.localeCompare(b.nombre)).map((pickup, pIdx) => {
+                              // Distances from this pickup to all others in the same area
+                              const distsInArea = areaPickups.filter(pp => pp.id !== pickup.id).map(pp => ({
+                                ...pp, dMi: haversine(pickup.lat, pickup.lng, pp.lat, pp.lng) * 0.621371
+                              })).sort((a, b) => a.dMi - b.dMi);
+                              const distBase = (haversine(BASE_LAT, BASE_LNG, pickup.lat, pickup.lng) * 0.621371).toFixed(1);
+                              const [showDists, setShowDists] = React.useState(false);
+                              return (
+                                <div key={pickup.id} className="px-3 py-2 hover:bg-zinc-50/50">
+                                  <div className="flex items-center gap-2">
+                                    <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${pickup.estado === 'esperando' ? 'bg-emerald-500' : 'bg-purple-500'}`} />
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-[11px] font-semibold text-zinc-800 truncate">{pickup.nombre}</p>
+                                      <p className="text-[9px] text-zinc-400 truncate">{pickup.direccion}</p>
+                                    </div>
+                                    <div className="flex items-center gap-1 flex-shrink-0">
+                                      <span className="text-[9px] text-red-500 font-semibold">{distBase} mi</span>
+                                      {pickup.choferAsignado && <span className="text-[8px] bg-blue-100 text-blue-700 px-1 py-0.5 rounded-full font-bold">{pickup.choferAsignado.split(' ')[0]}</span>}
+                                    </div>
+                                    {/* Nav links */}
+                                    <a href={navGoogleMaps(pickup.lat, pickup.lng)} target="_blank" rel="noopener" className="w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-[7px] font-black flex-shrink-0">G</a>
+                                    <a href={navWaze(pickup.lat, pickup.lng)} target="_blank" rel="noopener" className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[7px] font-black flex-shrink-0">W</a>
+                                    <a href={navAppleMaps(pickup.lat, pickup.lng)} target="_blank" rel="noopener" className="w-5 h-5 rounded-full bg-zinc-800 text-white flex items-center justify-center text-[7px] font-black flex-shrink-0">A</a>
+                                  </div>
+                                  {/* Distances to other clients in area */}
+                                  <div className="ml-4 mt-1">
+                                    <button onClick={() => setShowDists(!showDists)} className="text-[9px] font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1" style={{ touchAction: 'manipulation' }}>
+                                      <Route className="h-2.5 w-2.5" />{showDists ? 'Ocultar' : 'Ver'} distancias a {distsInArea.length} cliente{distsInArea.length !== 1 ? 's' : ''} en {areaName}
+                                    </button>
+                                    {showDists && (
+                                      <div className="mt-1 bg-amber-50/80 border border-amber-200 rounded-lg max-h-36 overflow-y-auto">
+                                        {distsInArea.map(pp => (
+                                          <div key={pp.id} className="flex items-center justify-between px-2.5 py-1 border-b border-amber-100 last:border-0">
+                                            <div className="flex items-center gap-1.5 min-w-0">
+                                              <div className={`w-2 h-2 rounded-full flex-shrink-0 ${pp.estado === 'esperando' ? 'bg-emerald-500' : 'bg-purple-500'}`} />
+                                              <span className="text-[9px] text-zinc-700 truncate">{pp.nombre}</span>
+                                            </div>
+                                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                                              <span className={`text-[9px] font-bold ${pp.dMi < 2 ? 'text-emerald-600' : pp.dMi < 5 ? 'text-orange-600' : 'text-red-600'}`}>{pp.dMi.toFixed(1)} mi</span>
+                                              <a href={`https://www.google.com/maps/dir/?api=1&origin=${pickup.lat},${pickup.lng}&destination=${pp.lat},${pp.lng}`} target="_blank" rel="noopener" className="text-[7px] text-blue-500 font-bold px-1 py-0.5 rounded bg-blue-50">G</a>
+                                              <a href={navWaze(pp.lat, pp.lng)} target="_blank" rel="noopener" className="text-[7px] text-emerald-600 font-bold px-1 py-0.5 rounded bg-emerald-50">W</a>
+                                              <a href={navAppleMaps(pp.lat, pp.lng)} target="_blank" rel="noopener" className="text-[7px] text-zinc-600 font-bold px-1 py-0.5 rounded bg-zinc-100">A</a>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {/* Clients without area */}
+                    {!adminAreaFilter && noArea.length > 0 && (
+                      <div className="border border-zinc-200 rounded-xl overflow-hidden">
+                        <div className="bg-zinc-50 px-3 py-2 flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full bg-zinc-400 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">?</div>
+                          <div>
+                            <p className="text-[11px] font-bold text-zinc-600">Sin area asignada ({noArea.length})</p>
+                          </div>
+                        </div>
+                        {noArea.map(p => (
+                          <div key={p.id} className="px-3 py-2 border-b border-zinc-50 last:border-0 flex items-center gap-2">
+                            <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${p.estado === 'esperando' ? 'bg-emerald-500' : 'bg-purple-500'}`} />
+                            <span className="text-[11px] text-zinc-700 truncate flex-1">{p.nombre}</span>
+                            <span className="text-[9px] text-red-500 font-semibold">{(haversine(BASE_LAT, BASE_LNG, p.lat, p.lng) * 0.621371).toFixed(1)} mi</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
             )}
 
             {/* Tab: PICKUP LIST */}
@@ -2426,6 +2573,7 @@ function AdminCard({ pickup, allPickups, onUpdate, onDelete, routeIdx, showRoute
               <span className="text-[12px] font-semibold text-zinc-800 truncate">{pickup.nombre}</span>
               <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isEsp ? 'bg-emerald-100 text-emerald-700' : 'bg-purple-100 text-purple-700'}`}>{isEsp ? 'ESPERA' : 'RECOGIDO'}</span>
               {pickup.horarioReady && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" />{pickup.horarioReady}</span>}
+              {pickup.area && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">{pickup.area}</span>}
             </div>
             <div className="flex items-center gap-2">
               <p className="text-[10px] text-zinc-400 truncate">{pickup.direccion}</p>
@@ -2471,6 +2619,15 @@ function AdminCard({ pickup, allPickups, onUpdate, onDelete, routeIdx, showRoute
             <div><span className="text-zinc-400">Distancia:</span> <span className="text-red-500 font-semibold">{distMi} mi de la Base</span></div>
             <div><span className="text-zinc-400">Creada:</span> <span className="text-zinc-600">{new Date(pickup.createdAt).toLocaleString('es', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span></div>
             {pickup.horarioReady && <div><span className="text-zinc-400">Horario Ready:</span> <span className="text-blue-600 font-bold">{pickup.horarioReady}</span></div>}
+            <div><span className="text-zinc-400">Area:</span> <select value={pickup.area || ''} onChange={e => onUpdate(pickup.id, { area: e.target.value || null })} className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 focus:outline-none">
+              <option value="">Sin area</option>
+              <option value="Miami">Miami</option>
+              <option value="West">West (Hialeah/Doral)</option>
+              <option value="Pan">Pan (Pembroke Pines)</option>
+              <option value="Beach">Beach (Miami Beach)</option>
+              <option value="North">North (Broward)</option>
+              <option value="Kendall">Kendall</option>
+            </select></div>
             {pickup.notas && <div className="col-span-2"><span className="text-zinc-400">Notas:</span> <span className="text-zinc-600">{pickup.notas}</span></div>}
           </div>
           {/* ─── DISTANCIAS A TODOS LOS DEMÁS CLIENTES ─── */}

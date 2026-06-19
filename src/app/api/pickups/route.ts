@@ -24,6 +24,7 @@ async function ensureTable() {
         "lng" DOUBLE PRECISION NOT NULL,
         "notas" TEXT,
         "horarioReady" TEXT,
+        "area" TEXT,
         "estado" TEXT NOT NULL DEFAULT 'esperando',
         "choferAsignado" TEXT,
         "ordenRuta" INTEGER,
@@ -74,7 +75,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     await ensureTable();
-    const { nombre, telefono, direccion, lat, lng, notas, horarioReady } = await req.json();
+    const { nombre, telefono, direccion, lat, lng, notas, horarioReady, area } = await req.json();
 
     if (!nombre || !direccion || lat == null || lng == null) {
       return NextResponse.json({ ok: false, error: 'Nombre, direccion y ubicacion son requeridos' }, { status: 400 });
@@ -84,7 +85,7 @@ export async function POST(req: NextRequest) {
     }
 
     const pickup = await prisma.pickupRequest.create({
-      data: { nombre, telefono: telefono || null, direccion, lat, lng, notas: notas || null, horarioReady: horarioReady || null },
+      data: { nombre, telefono: telefono || null, direccion, lat, lng, notas: notas || null, horarioReady: horarioReady || null, area: area || null },
     });
 
     return NextResponse.json({ ok: true, data: pickup });
@@ -97,7 +98,7 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   try {
     await ensureTable();
-    const { id, estado, choferAsignado, ordenRuta, notas, horarioReady, fechaRecogida } = await req.json();
+    const { id, estado, choferAsignado, ordenRuta, notas, horarioReady, fechaRecogida, area } = await req.json();
     if (!id) return NextResponse.json({ ok: false, error: 'ID requerido' }, { status: 400 });
 
     const updateData: any = {};
@@ -107,6 +108,7 @@ export async function PUT(req: NextRequest) {
     if (notas !== undefined) updateData.notas = notas;
     if (horarioReady !== undefined) updateData.horarioReady = horarioReady || null;
     if (fechaRecogida !== undefined) updateData.fechaRecogida = fechaRecogida ? new Date(fechaRecogida) : null;
+    if (area !== undefined) updateData.area = area || null;
 
     const pickup = await prisma.pickupRequest.update({ where: { id }, data: updateData });
     return NextResponse.json({ ok: true, data: pickup });
