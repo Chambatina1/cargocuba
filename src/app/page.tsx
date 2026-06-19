@@ -154,14 +154,6 @@ async function forwardGeocode(query: string): Promise<GeoSuggestion[]> {
 
   // Strategy 4: Viewbox Florida/Cuba
   results = await nominatimSearch(query, { viewbox: '-87,24,-79,31', bounded: 0 });
-  if (results.length > 0) return results;
-
-  // Strategy 5: Append "Miami, FL"
-  results = await nominatimSearch(`${query}, Miami, FL`);
-  if (results.length > 0) return results;
-
-  // Strategy 6: Append "Havana, Cuba"
-  results = await nominatimSearch(`${query}, Havana, Cuba`);
 
   return results;
 }
@@ -602,6 +594,8 @@ export default function CargoCubaPage() {
       previewMarkerRef.current.bindPopup(`<div style="font-family:system-ui;"><strong style="font-size:12px;">Tu direccion</strong><div style="font-size:10px;color:#dc2626;font-weight:600;">Punto rojo = se hara VERDE al enviar</div></div>`).openPopup();
       mapInstRef.current.setView([lat, lng], 16, { animate: true });
     }
+    // Close panel so user can SEE the pin on the map
+    setTimeout(() => setPanel('none'), 400);
   }, []);
 
   const handleSearchAddress = useCallback((q: string) => {
@@ -641,8 +635,10 @@ export default function CargoCubaPage() {
 
   // Explicit search on button press / Enter key
   const handleClientSearchNow = useCallback(async () => {
-    const q = searchQuery.trim();
-    if (!q) return;
+    // Read from DOM to get the latest typed value (not stale state)
+    const input = document.getElementById('client-addr-input') as HTMLInputElement;
+    const q = (input?.value || searchQuery).trim();
+    if (!q) { toast.error('Escribe una direccion primero'); return; }
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     setSearching(true); setShowSuggestions(false); setSuggestions([]);
     // First: check Google Maps link
@@ -661,7 +657,8 @@ export default function CargoCubaPage() {
         mapInstRef.current.setView([coords.lat, coords.lng], 16, { animate: true });
       }
       setSearching(false);
-      toast.success('Direccion de Google Maps ubicada en el mapa');
+      toast.success('Direccion de Google Maps ubicada');
+      setTimeout(() => setPanel('none'), 400);
       return;
     }
     // Search via Nominatim with fallbacks
@@ -670,13 +667,9 @@ export default function CargoCubaPage() {
     if (results.length > 0) {
       // Auto-select the first result and put it on the map
       selectSuggestion(results[0]);
-      if (results.length > 1) {
-        // Show remaining suggestions too
-        setSuggestions(results); setShowSuggestions(true);
-      }
       toast.success('Direccion ubicada en el mapa');
     } else {
-      toast.error('No encontrada. Abre Google Maps > busca > comparte > copia enlace > pega aqui.');
+      toast.error('No encontrada. Escribe: calle + ciudad, o pega enlace de Google Maps.');
     }
   }, [searchQuery, selectSuggestion]);
 
@@ -1223,6 +1216,30 @@ export default function CargoCubaPage() {
         )}
       </AnimatePresence>
 
+      {/* ═══ FLOTANTE: Cliente - direccion ubicada, volver al formulario ═══ */}
+      <AnimatePresence>
+        {form.lat !== 0 && panel === 'none' && !ppTapMode && !clientTapMode && (
+          <motion.div
+            initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 40 }}
+            className="absolute bottom-20 left-2 right-2 z-[1005] bg-white rounded-2xl shadow-2xl border border-emerald-200 p-3 space-y-2"
+          >
+            <div className="flex items-start gap-2">
+              <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0 mt-0.5"><MapPin className="h-3 w-3 text-white" /></div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-emerald-700">Direccion ubicada en el mapa</p>
+                <p className="text-[11px] text-zinc-500 truncate">{form.direccion || searchQuery}</p>
+              </div>
+              <button onClick={() => { setForm(f => ({ ...f, lat: 0, lng: 0, direccion: '' })); setSearchQuery(''); if (previewMarkerRef.current) { previewMarkerRef.current.remove(); previewMarkerRef.current = null; } }} className="text-zinc-400 hover:text-red-500 flex-shrink-0"><X className="h-4 w-4" /></button>
+            </div>
+            <button onClick={() => setPanel('clientForm')}
+              className="w-full h-11 rounded-xl bg-gradient-to-r from-emerald-500 to-green-500 text-white font-bold text-sm hover:from-emerald-600 hover:to-green-600 transition-all flex items-center justify-center gap-2 shadow-lg"
+              style={{ touchAction: 'manipulation' }}>
+              <Check className="h-4 w-4" /> Completar pedido (nombre, telefono)
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ═══════════ TOP BAR (over map, always visible) ═══════════ */}
       <div className="absolute top-0 left-0 right-0 z-[1000] pointer-events-none">
         <div className="pointer-events-auto bg-white/95 backdrop-blur-md px-4 py-2.5 flex items-center justify-between shadow-lg border-b border-zinc-100">
@@ -1487,6 +1504,7 @@ export default function CargoCubaPage() {
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
                     <input
+                      id="client-addr-input"
                       value={searchQuery}
                       onChange={e => handleSearchAddress(e.target.value)}
                       onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
