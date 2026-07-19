@@ -31,18 +31,20 @@ export async function middleware(request: NextRequest) {
     (method === 'POST' && pathname === '/api/routing')
 
   if (isProtectedWrite) {
-    // 1) Si NextAuth esta configurado, validar JWT
-    if (process.env.NEXTAUTH_SECRET) {
-      const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET })
-      if (!token) {
-        return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
-      }
+    // 1) Primero probar auth legacy (cookie cc-admin o header x-admin-key con ADMIN_PASSWORD)
+    //    Esto asegura que el admin siempre pueda entrar, incluso si NextAuth se rompe.
+    if (verifyAdmin(request)) {
       return NextResponse.next()
     }
-    // 2) Sin NextAuth: esquema legacy con ADMIN_PASSWORD (env), nunca hardcodeado
-    if (!verifyAdmin(request)) {
-      return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
+    // 2) Si no, probar JWT de NextAuth (si esta configurado)
+    if (process.env.NEXTAUTH_SECRET) {
+      const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET })
+      if (token) {
+        return NextResponse.next()
+      }
     }
+    // 3) Ninguno valido -> rechazar
+    return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
   }
 
   return NextResponse.next()
