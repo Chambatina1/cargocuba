@@ -1,0 +1,17 @@
+{
+  "name": "vrp-solver",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "CargoCuba - Mini-servicio de optimizacion VRP (OR-Tools con fallback savings-TS)",
+  "scripts": {
+    "start": "bun src/index.ts",
+    "dev": "bun src/index.ts"
+  },
+  "dependencies": {
+    "node_or_tools": "*"
+  },
+  "optionalDependencies": {
+    "node_or_tools": "*"
+  }
+}

@@ -8,6 +8,7 @@ import {
   Truck, Loader2, ChevronRight, Zap, RotateCcw, Users, Shield,
   Navigation, Crosshair, ArrowLeft, Radar, MapIcon, Clock, Search
 } from 'lucide-react';
+import TrackingOverlay from '@/components/map/TrackingOverlay';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 interface Pickup {
@@ -275,6 +276,9 @@ export default function CargoCubaPage() {
   const [followingDriver, setFollowingDriver] = useState(false);
   const [followDriverPhone, setFollowDriverPhone] = useState<string | null>(null);
 
+  // ─── Tracking Fluido (overlay optimizador VRP) ───
+  const [showTracking, setShowTracking] = useState(false);
+
   // ─── Admin (no password — direct access) ───
   const [adminChofer, setAdminChofer] = useState('');
   const [adminTab, setAdminTab] = useState<'lista' | 'distancias' | 'ruta' | 'grupos' | 'areas'>('lista');
@@ -283,6 +287,11 @@ export default function CargoCubaPage() {
   const [calculatingDist, setCalculatingDist] = useState(false);
   const [scheduledDriver, setScheduledDriver] = useState('');
   const [scheduling, setScheduling] = useState(false);
+  // Expandir distancias por pickup en la pestana areas (estado del padre, no hook por item)
+  const [expandedDists, setExpandedDists] = useState<Set<number>>(new Set());
+  const toggleExpandDists = useCallback((id: number) => {
+    setExpandedDists(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+  }, []);
   // Admin search & filter
   const [adminSearch, setAdminSearch] = useState('');
   const [adminEstadoFilter, setAdminEstadoFilter] = useState<'' | 'esperando' | 'recogido'>('');
@@ -565,7 +574,7 @@ export default function CargoCubaPage() {
         // OSRM route line if available
         if (selectRouteData) {
           const osrmPts = selectedIds.map(id => pickups.find(p => p.id === id)).filter(Boolean) as Pickup[];
-          const coords: [number, number][] = [[BASE_LAT, BASE_LNG], ...osrmPts.map(p => [p.lat, p.lng])];
+          const coords: [number, number][] = [[BASE_LAT, BASE_LNG], ...osrmPts.map(p => [p.lat, p.lng] as [number, number])];
           const line = L.polyline(coords, { color: '#f59e0b', weight: 5, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }).addTo(mapInstRef.current);
           selectLinesRef.current.push(line);
         } else {
@@ -1292,7 +1301,7 @@ export default function CargoCubaPage() {
         const startLng = grupo.driver?.puntoPartidaLng ?? BASE_LNG;
         const ordered = optimizeOrder(esperando, startLat, startLng);
         const allPoints = [{ lat: startLat, lng: startLng }, ...ordered.map(p => ({ lat: p.lat, lng: p.lng }))];
-        let result = null;
+        let result: any = null;
         try { result = await calcRoute(allPoints); } catch {}
         newRoutes.set(grupo.nombre, { route: ordered, data: result });
       }
@@ -1544,6 +1553,14 @@ export default function CargoCubaPage() {
             <div className="w-9 h-9 rounded-full bg-orange-500 flex items-center justify-center shadow-lg shadow-orange-200"><Truck className="h-4 w-4 text-white" /></div>
             <span className="text-[9px] font-bold text-orange-700 leading-tight">Chofer</span>
             {driverActive && <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white animate-pulse" />}
+          </motion.button>
+
+          <motion.button whileTap={{ scale: 0.92 }} onClick={() => setShowTracking(true)}
+            className="flex flex-col items-center gap-1 rounded-2xl px-3 py-2.5 shadow-2xl border relative bg-gradient-to-br from-blue-600 to-indigo-600 border-indigo-700"
+            style={{ touchAction: 'manipulation' }}
+            title="Tracking fluido con interpolación + optimizador VRP">
+            <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center"><Radar className="h-4 w-4 text-white" /></div>
+            <span className="text-[9px] font-bold text-white leading-tight">Live</span>
           </motion.button>
 
           <motion.button whileTap={{ scale: 0.92 }} onClick={toggleSelectMode}
@@ -2246,7 +2263,7 @@ export default function CargoCubaPage() {
                   <button onClick={handleCalcDistances} disabled={calculatingDist || pickups.filter(p => p.estado !== 'cancelado').length < 2}
                     className="bg-orange-500 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 hover:bg-orange-600 disabled:opacity-40"
                     style={{ touchAction: 'manipulation' }}>
-                    {calculating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Route className="h-3 w-3" />}{calculating ? '...' : 'Distancias'}
+                    {calculatingDist ? <Loader2 className="h-3 w-3 animate-spin" /> : <Route className="h-3 w-3" />}{calculatingDist ? '...' : 'Distancias'}
                   </button>
                   {optimizedRoute.length > 0 && <button onClick={() => { setOptimizedRoute([]); setRouteData(null); }} className="w-7 h-7 rounded-lg border border-zinc-200 flex items-center justify-center text-zinc-400"><RotateCcw className="h-3 w-3" /></button>}
                   <div className="flex-1" />
@@ -2340,7 +2357,7 @@ export default function CargoCubaPage() {
                                 ...pp, dMi: haversine(pickup.lat, pickup.lng, pp.lat, pp.lng) * 0.621371
                               })).sort((a, b) => a.dMi - b.dMi);
                               const distBase = (haversine(refLat, refLng, pickup.lat, pickup.lng) * 0.621371).toFixed(1);
-                              const [showDists, setShowDists] = React.useState(false);
+                              const showDists = expandedDists.has(pickup.id);
                               return (
                                 <div key={pickup.id} className="px-3 py-2 hover:bg-zinc-50/50">
                                   <div className="flex items-center gap-2">
@@ -2360,7 +2377,7 @@ export default function CargoCubaPage() {
                                   </div>
                                   {/* Distances to other clients in area */}
                                   <div className="ml-4 mt-1">
-                                    <button onClick={() => setShowDists(!showDists)} className="text-[9px] font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1" style={{ touchAction: 'manipulation' }}>
+                                    <button onClick={() => toggleExpandDists(pickup.id)} className="text-[9px] font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1" style={{ touchAction: 'manipulation' }}>
                                       <Route className="h-2.5 w-2.5" />{showDists ? 'Ocultar' : 'Ver'} distancias a {distsInArea.length} cliente{distsInArea.length !== 1 ? 's' : ''} en {areaName}
                                     </button>
                                     {showDists && (
@@ -2445,7 +2462,7 @@ export default function CargoCubaPage() {
                   <button onClick={handleCalcDistances} disabled={calculatingDist || pickups.filter(p => p.estado !== 'cancelado').length < 2}
                     className="bg-orange-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 mx-auto hover:bg-orange-600 disabled:opacity-40"
                     style={{ touchAction: 'manipulation' }}>
-                    {calculating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Route className="h-4 w-4" />}{calculating ? 'Calculando...' : 'Calcular Distancias'}
+                    {calculatingDist ? <Loader2 className="h-4 w-4 animate-spin" /> : <Route className="h-4 w-4" />}{calculatingDist ? 'Calculando...' : 'Calcular Distancias'}
                   </button>
                 </div>
               ) : (
@@ -2759,6 +2776,9 @@ export default function CargoCubaPage() {
           })()}
         </div>
       )}
+
+      {/* ═══════════ TRACKING FLUIDO OVERLAY (optimizador VRP + interpolacion) ═══════════ */}
+      {showTracking && <TrackingOverlay onClose={() => setShowTracking(false)} />}
     </div>
   );
 }

@@ -1,7 +1,8 @@
 // =============================================
-// CargoCuba - Recogidas con Ruta Optimizada
-// VERDE = esperando | MORADO = recogido
-// Chofer se ve moviendo en tiempo real en el mapa
+// CargoCuba - Optimizador logistico VRP de ultima milla
+// VERDE = esperando | MORADO = recogido | CHECK = completado
+// Chofer se ve moviendose en tiempo real (interpolado) sobre su ruta
+// Rutas generadas por OR-Tools (VRPTW multi-deposito con capacidad)
 // =============================================
 
 generator client {
@@ -14,53 +15,130 @@ datasource db {
 }
 
 // =============================================
-// PICKUP REQUEST (Recogida)
+// PICKUP REQUEST (Recogida / parada)
+// Campos VRPTW: ventana de tiempo, duracion del servicio, demanda, prioridad
 // =============================================
 
 model PickupRequest {
-  id            Int      @id @default(autoincrement())
-  nombre        String
-  telefono      String?
-  direccion     String
-  lat           Float
-  lng           Float
-  notas         String?
-  horarioReady  String?                          // "HH:MM" - hora que el cliente esta listo
-  area          String?                          // Miami, West, Pan, Beach, etc.
-  estado        String   @default("esperando")  // esperando, recogido, cancelado
-  origen        String   @default("cliente")    // cliente, oficina
-  choferAsignado String?
-  ordenRuta     Int?
-  fechaRecogida DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              Int       @id @default(autoincrement())
+  nombre          String
+  telefono        String?
+  direccion       String
+  lat             Float
+  lng             Float
+  notas           String?
+  horarioReady    String?   // "HH:MM" legado - hora que el cliente esta listo
+  // VRPTW
+  timeWindowStart DateTime? // ventana de tiempo de inicio preferido
+  timeWindowEnd   DateTime? // ventana de tiempo de fin preferido
+  serviceMinutes  Int       @default(5)  // minutos que el chofer pasa en la parada
+  paquetes        Int       @default(1)  // demanda (cantidad de bultos)
+  priority        Int       @default(0)  // 0 normal, >0 urgente
+  // Estado operativo
+  area            String?   // Miami, West, Pan, Beach, etc.
+  estado          String    @default("esperando") // esperando, asignado, en_camino, recogido, cancelado, fallido
+  origen          String    @default("cliente")   // cliente, oficina
+  choferAsignado  String?
+  ordenRuta       Int?
+  routeId         Int?      // referencia a la ruta optimizada que la contiene
+  fechaRecogida   DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  routeStop       RouteStop?
 
   @@index([estado])
   @@index([choferAsignado])
   @@index([fechaRecogida])
   @@index([createdAt])
+  @@index([routeId])
 }
 
 // =============================================
-// DRIVER LOCATION (GPS en tiempo real del chofer)
+// DRIVER LOCATION (Chofer + GPS en tiempo real)
+// El punto de partida es el deposito de ese chofer (sede)
+// rutaActiva = snapshot de la polyline OSRM para interpolar el movimiento
 // =============================================
 
 model DriverLocation {
-  id             Int      @id @default(autoincrement())
-  phone          String   @unique
-  nombre         String
-  lat            Float
-  lng            Float
-  activo         Boolean  @default(true)
-  mensaje        String?  @default("Voy a salir para Chambatina")
-  precioServicio String?
-  direccionRecojo String?
-  comunidad      String?
-  puntoPartidaLat  Float?    // Punto de partida del chofer (sede)
-  puntoPartidaLng  Float?
-  puntoPartidaDir  String?   // Direccion del punto de partida
-  updatedAt      DateTime @updatedAt
+  id                Int       @id @default(autoincrement())
+  phone             String    @unique
+  nombre            String
+  lat               Float
+  lng               Float
+  activo            Boolean   @default(true)
+  mensaje           String?   @default("Voy a salir para Chambatina")
+  precioServicio    String?
+  direccionRecojo   String?
+  comunidad         String?
+  // Punto de partida / deposito (sede del chofer)
+  puntoPartidaLat   Float?
+  puntoPartidaLng   Float?
+  puntoPartidaDir   String?
+  // Capacidad y estado de ruta
+  capacidad         Int       @default(20)   // max paquetes
+  rutaActiva        Json?     // snapshot de la ruta: {polyline: [[lat,lng]...], stops: [...]}
+  etaActual         DateTime?
+  progreso          Float?    @default(0)    // 0..1 de la ruta actual
+  velocidad         Float?    // mph estimada
+  heading           Float?    // grados
+  currentStopId     Int?      // RouteStop.id de la parada actual
+  updatedAt         DateTime  @updatedAt
+
+  routes            Route[]
 
   @@index([phone])
   @@index([activo])
+}
+
+// =============================================
+// ROUTE (Ruta optimizada por OR-Tools, una por chofer y por tanda)
+// =============================================
+
+model Route {
+  id             Int       @id @default(autoincrement())
+  choferPhone    String
+  estado         String    @default("planeada") // planeada, activa, completada, cancelada
+  secuencia      Json      // [{pickupId, orden, lat, lng, ...}]
+  polyline       Json?     // [[lat,lng],...] geometria OSRM para interpolacion
+  distanciaTotal Float     @default(0) // metros
+  duracionTotal  Float     @default(0) // segundos
+  paradasTotal   Int       @default(0)
+  paradasHechas  Int       @default(0)
+  // Optimizacion
+  solverUsed     String?   // "ortools" | "fallback-ts"
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  driver         DriverLocation @relation(fields: [choferPhone], references: [phone], onDelete: Cascade)
+  stops          RouteStop[]
+
+  @@index([choferPhone])
+  @@index([estado])
+  @@index([createdAt])
+}
+
+// =============================================
+// ROUTE STOP (Cada parada de una ruta - permite ver el progreso de mision)
+// =============================================
+
+model RouteStop {
+  id              Int       @id @default(autoincrement())
+  routeId         Int
+  pickupId        Int       @unique
+  orden           Int       // posicion dentro de la ruta (0 = primera)
+  estado          String    @default("pendiente") // pendiente, en_camino, recogido, fallido
+  llegadaEstimada DateTime? // ETA absoluto
+  llegadaReal     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  route           Route     @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  pickup          PickupRequest @relation(fields: [pickupId], references: [id], onDelete: Cascade)
+
+  @@index([routeId])
+  @@index([estado])
+  @@index([orden])
 }

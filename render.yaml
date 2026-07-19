@@ -1,7 +1,10 @@
 # =============================================
-# Render.com - Flota de Autos Deployment
+# Render.com - CargoCuba Deployment
 # =============================================
-
+# Servicio unico "cargocuba" (independiente de plataformachambatina).
+# Arranca: mini-services (vrp-solver + tracking-server) + Next.js standalone.
+# Los mini-services se construyen/instalan con .zscripts/mini-services-*.sh.
+# =============================================
 services:
   - type: web
     name: cargocuba
@@ -10,8 +13,22 @@ services:
     region: oregon
     branch: main
     repo: https://github.com/Chambatina1/cargocuba.git
-    buildCommand: npx prisma generate && npm install --ignore-scripts && npm run build
-    startCommand: npx prisma db push --skip-generate --accept-data-loss 2>/dev/null; node .next/standalone/server.js
+    # Build: instala deps de mini-services, genera Prisma, build Next.js.
+    # Los mini-services se ejecutan con tsx/bun directamente desde src en start.
+    buildCommand: |
+      (cd mini-services/vrp-solver && npm install --no-audit --no-fund --ignore-scripts 2>/dev/null || true)
+      (cd mini-services/tracking-server && npm install --no-audit --no-fund --ignore-scripts 2>/dev/null || true)
+      npx prisma generate
+      npm install --ignore-scripts
+      npm run build
+    # Start: arranca mini-services en background + aplica schema + levanta Next.js.
+    # Si los mini-services fallan, Next.js igual levanta (usa fallback TS en proceso).
+    startCommand: |
+      (node mini-services/vrp-solver/src/index.ts > /tmp/vrp-solver.log 2>&1 &) || true
+      (node mini-services/tracking-server/src/index.ts > /tmp/tracking-server.log 2>&1 &) || true
+      sleep 2
+      npx prisma db push --skip-generate --accept-data-loss 2>/dev/null || true
+      node .next/standalone/server.js
     envVars:
       - key: NODE_ENV
         value: production
@@ -19,3 +36,18 @@ services:
         value: 20.11.0
       - key: DATABASE_URL
         sync: false
+      # Autenticacion admin (configurar en el dashboard de Render)
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: NEXTAUTH_SECRET
+        sync: false
+      - key: NEXTAUTH_URL
+        sync: false
+      # Puertos de mini-services (fijos dentro del contenedor)
+      - key: VRP_SOLVER_PORT
+        value: '3010'
+      - key: TRACKING_PORT
+        value: '3011'
+      # Cliente: el navegador contacta el tracking-server via Caddy (?XTransformPort)
+      - key: NEXT_PUBLIC_TRACKING_PORT
+        value: '3011'

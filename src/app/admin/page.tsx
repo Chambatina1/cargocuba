@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { toast, Toaster } from 'sonner';
+import RutasTab from '@/components/admin/RutasTab';
 
 // ─── Types ───────────────────────────────────────────────────────────────
 interface Pickup {
@@ -81,7 +82,7 @@ export default function AdminPage() {
     if (typeof window !== 'undefined') return localStorage.getItem('cc-admin') === '1';
     return false;
   });
-  const [tab, setTab] = useState<'recogidas' | 'choferes'>('recogidas');
+  const [tab, setTab] = useState<'recogidas' | 'choferes' | 'rutas'>('recogidas');
   const [pickups, setPickups] = useState<Pickup[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [loading, setLoading] = useState(true);
@@ -226,6 +227,10 @@ export default function AdminPage() {
           <button onClick={() => setTab('choferes')}
             className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition-all ${tab === 'choferes' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>
             Chofers ({drivers.length})
+          </button>
+          <button onClick={() => setTab('rutas')}
+            className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition-all ${tab === 'rutas' ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>
+            Rutas 🚀
           </button>
         </div>
 
@@ -373,6 +378,11 @@ export default function AdminPage() {
               })
             )}
           </div>
+        )}
+
+        {/* ═══ RUTAS TAB (Optimizador VRP OR-Tools) ═══ */}
+        {tab === 'rutas' && (
+          <RutasTab />
         )}
       </main>
     </div>
