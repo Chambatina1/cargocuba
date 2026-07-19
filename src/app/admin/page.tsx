@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { toast, Toaster } from 'sonner';
 import RutasTab from '@/components/admin/RutasTab';
+import CargarListaTab from '@/components/admin/CargarListaTab';
 
 // ─── Types ───────────────────────────────────────────────────────────────
 interface Pickup {
@@ -82,7 +83,7 @@ export default function AdminPage() {
     if (typeof window !== 'undefined') return localStorage.getItem('cc-admin') === '1';
     return false;
   });
-  const [tab, setTab] = useState<'recogidas' | 'choferes' | 'rutas'>('recogidas');
+  const [tab, setTab] = useState<'recogidas' | 'choferes' | 'rutas' | 'cargar'>('recogidas');
   const [pickups, setPickups] = useState<Pickup[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [loading, setLoading] = useState(true);

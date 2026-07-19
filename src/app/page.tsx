@@ -316,13 +316,29 @@ export default function CargoCubaPage() {
   const [distRefPoint, setDistRefPoint] = useState<{ lat: number; lng: number; name: string; pickupId?: number } | null>(null);
   const distRefMarkerRef = useRef<any>(null);
 
-  // Helper: get the effective reference for distances (refPoint > driverPP > BASE)
+  // Helper: get the effective reference for distances.
+  // Prioridad: punto manual > posición EN VIVO del chofer activo > sede del chofer > BASE.
+  // El cambio clave: usamos d.lat/d.lng (GPS actual) antes que la sede estática.
   const getEffectiveRef = useCallback(() => {
     if (distRefPoint) return { lat: distRefPoint.lat, lng: distRefPoint.lng, name: distRefPoint.name };
-    const selDriver = drivers.find(d => d.nombre === adminChofer);
-    if (selDriver?.puntoPartidaLat && selDriver?.puntoPartidaLng) {
-      return { lat: selDriver.puntoPartidaLat, lng: selDriver.puntoPartidaLng, name: selDriver.puntoPartidaDir || selDriver.nombre };
+    // 1) Chofer seleccionado en el admin (por nombre) — posición EN VIVO primero
+    const selDriver = drivers.find(d => d.nombre === adminChofer && d.activo);
+    if (selDriver) {
+      // Si tiene posición en vivo válida (no 0,0), usarla
+      if (selDriver.lat !== 0 && selDriver.lng !== 0) {
+        return { lat: selDriver.lat, lng: selDriver.lng, name: `${selDriver.nombre} (en vivo)` };
+      }
+      // Si no, caer a su sede guardada
+      if (selDriver.puntoPartidaLat && selDriver.puntoPartidaLng) {
+        return { lat: selDriver.puntoPartidaLat, lng: selDriver.puntoPartidaLng, name: selDriver.puntoPartidaDir || selDriver.nombre };
+      }
     }
+    // 2) Si no hay chofer seleccionado, usar el primer chofer ACTIVO con GPS en vivo
+    const liveDriver = drivers.find(d => d.activo && d.lat !== 0 && d.lng !== 0);
+    if (liveDriver) {
+      return { lat: liveDriver.lat, lng: liveDriver.lng, name: `${liveDriver.nombre} (en vivo)` };
+    }
+    // 3) Sino, base hardcodeada (fallback)
     return { lat: BASE_LAT, lng: BASE_LNG, name: BASE_NAME };
   }, [distRefPoint, drivers, adminChofer]);
   const effectiveRef = getEffectiveRef();
