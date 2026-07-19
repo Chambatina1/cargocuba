@@ -1,11 +1,16 @@
 import { NextResponse } from 'next/server'
 
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'chambatina2025'
+// Credencial desde env. NUNCA hardcodeada: si falta, el login falla cerrado.
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || ''
 
 export async function POST(request: Request) {
   try {
     const { password } = await request.json()
-    if (password === ADMIN_PASSWORD) {
+    if (!ADMIN_PASSWORD || password === ADMIN_PASSWORD) {
+      // Si no hay ADMIN_PASSWORD configurado, no se permite login (fail closed)
+      if (!ADMIN_PASSWORD) {
+        return NextResponse.json({ ok: false, error: 'ADMIN_PASSWORD no configurado' }, { status: 503 })
+      }
       const response = NextResponse.json({ ok: true })
       response.cookies.set('cc-admin', ADMIN_PASSWORD, {
         httpOnly: true,

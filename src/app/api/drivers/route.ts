@@ -40,6 +40,19 @@ async function ensureDriverTable() {
     try { await prisma.$executeRawUnsafe(`ALTER TABLE "DriverLocation" ADD COLUMN IF NOT EXISTS "puntoPartidaLat" DOUBLE PRECISION;`); } catch {}
     try { await prisma.$executeRawUnsafe(`ALTER TABLE "DriverLocation" ADD COLUMN IF NOT EXISTS "puntoPartidaLng" DOUBLE PRECISION;`); } catch {}
     try { await prisma.$executeRawUnsafe(`ALTER TABLE "DriverLocation" ADD COLUMN IF NOT EXISTS "puntoPartidaDir" TEXT;`); } catch {}
+    // VRP + tracking fields
+    const driverCols: [string, string][] = [
+      ['"capacidad"',     'INTEGER NOT NULL DEFAULT 20'],
+      ['"rutaActiva"',    'JSONB'],
+      ['"etaActual"',     'TIMESTAMP(6)'],
+      ['"progreso"',      'DOUBLE PRECISION DEFAULT 0'],
+      ['"velocidad"',     'DOUBLE PRECISION'],
+      ['"heading"',       'DOUBLE PRECISION'],
+      ['"currentStopId"', 'INTEGER'],
+    ];
+    for (const [col, type] of driverCols) {
+      try { await prisma.$executeRawUnsafe(`ALTER TABLE "DriverLocation" ADD COLUMN IF NOT EXISTS ${col} ${type};`); } catch {}
+    }
     driverTableReady = true;
     console.log('[Drivers] Table created/updated');
   }
@@ -62,7 +75,11 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     await ensureDriverTable();
-    const { phone, nombre, lat, lng, activo, mensaje, precioServicio, direccionRecojo, comunidad, puntoPartidaLat, puntoPartidaLng, puntoPartidaDir } = await req.json();
+    const {
+      phone, nombre, lat, lng, activo, mensaje, precioServicio, direccionRecojo, comunidad,
+      puntoPartidaLat, puntoPartidaLng, puntoPartidaDir,
+      capacidad, velocidad, heading, currentStopId,
+    } = await req.json();
 
     if (!phone || !nombre || lat == null || lng == null) {
       return NextResponse.json({ ok: false, error: 'Phone, nombre, lat y lng son requeridos' }, { status: 400 });
@@ -76,6 +93,10 @@ export async function POST(req: NextRequest) {
     if (puntoPartidaLat != null) updateData.puntoPartidaLat = puntoPartidaLat;
     if (puntoPartidaLng != null) updateData.puntoPartidaLng = puntoPartidaLng;
     if (puntoPartidaDir !== undefined) updateData.puntoPartidaDir = puntoPartidaDir;
+    if (capacidad != null) updateData.capacidad = capacidad;
+    if (velocidad != null) updateData.velocidad = velocidad;
+    if (heading != null) updateData.heading = heading;
+    if (currentStopId != null) updateData.currentStopId = currentStopId;
 
     const driver = await prisma.driverLocation.upsert({
       where: { phone },
@@ -90,6 +111,10 @@ export async function POST(req: NextRequest) {
         puntoPartidaLat: puntoPartidaLat ?? null,
         puntoPartidaLng: puntoPartidaLng ?? null,
         puntoPartidaDir: puntoPartidaDir || null,
+        capacidad: capacidad ?? 20,
+        velocidad: velocidad ?? null,
+        heading: heading ?? null,
+        currentStopId: currentStopId ?? null,
       },
     });
 
@@ -103,7 +128,11 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   try {
     await ensureDriverTable();
-    const { phone, nombre, activo, lat, lng, mensaje, precioServicio, direccionRecojo, comunidad, puntoPartidaLat, puntoPartidaLng, puntoPartidaDir } = await req.json();
+    const {
+      phone, nombre, activo, lat, lng, mensaje, precioServicio, direccionRecojo, comunidad,
+      puntoPartidaLat, puntoPartidaLng, puntoPartidaDir,
+      capacidad, rutaActiva, etaActual, progreso, velocidad, heading, currentStopId,
+    } = await req.json();
     if (!phone) return NextResponse.json({ ok: false, error: 'Phone requerido' }, { status: 400 });
 
     const updateData: any = {};
@@ -118,14 +147,17 @@ export async function PUT(req: NextRequest) {
     if (puntoPartidaLat != null) updateData.puntoPartidaLat = puntoPartidaLat;
     if (puntoPartidaLng != null) updateData.puntoPartidaLng = puntoPartidaLng;
     if (puntoPartidaDir !== undefined) updateData.puntoPartidaDir = puntoPartidaDir;
+    if (capacidad != null) updateData.capacidad = capacidad;
+    if (rutaActiva !== undefined) updateData.rutaActiva = rutaActiva;
+    if (etaActual !== undefined) updateData.etaActual = etaActual ? new Date(etaActual) : null;
+    if (progreso !== undefined) updateData.progreso = progreso;
+    if (velocidad != null) updateData.velocidad = velocidad;
+    if (heading != null) updateData.heading = heading;
+    if (currentStopId != null) updateData.currentStopId = currentStopId;
 
     // If creating new driver (no lat/lng sent), use puntoPartida as fallback
     const createLat = lat != null ? lat : (puntoPartidaLat || 0);
     const createLng = lng != null ? lng : (puntoPartidaLng || 0);
-    // Also ensure puntoPartida fields are always in updateData
-    if (puntoPartidaLat != null) updateData.puntoPartidaLat = puntoPartidaLat;
-    if (puntoPartidaLng != null) updateData.puntoPartidaLng = puntoPartidaLng;
-    if (puntoPartidaDir !== undefined) updateData.puntoPartidaDir = puntoPartidaDir;
     if (nombre) updateData.nombre = nombre;
 
     const driver = await prisma.driverLocation.upsert({
@@ -140,6 +172,13 @@ export async function PUT(req: NextRequest) {
         puntoPartidaLat: puntoPartidaLat ?? null,
         puntoPartidaLng: puntoPartidaLng ?? null,
         puntoPartidaDir: puntoPartidaDir || null,
+        capacidad: capacidad ?? 20,
+        rutaActiva: rutaActiva ?? undefined,
+        etaActual: etaActual ? new Date(etaActual) : null,
+        progreso: progreso ?? 0,
+        velocidad: velocidad ?? null,
+        heading: heading ?? null,
+        currentStopId: currentStopId ?? null,
       },
     });
     return NextResponse.json({ ok: true, data: driver });
