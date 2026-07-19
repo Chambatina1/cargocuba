@@ -31,20 +31,9 @@ export async function middleware(request: NextRequest) {
     (method === 'POST' && pathname === '/api/routing')
 
   if (isProtectedWrite) {
-    // 1) Primero probar auth legacy (cookie cc-admin o header x-admin-key con ADMIN_PASSWORD)
-    //    Esto asegura que el admin siempre pueda entrar, incluso si NextAuth se rompe.
-    if (verifyAdmin(request)) {
-      return NextResponse.next()
-    }
-    // 2) Si no, probar JWT de NextAuth (si esta configurado)
-    if (process.env.NEXTAUTH_SECRET) {
-      const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET })
-      if (token) {
-        return NextResponse.next()
-      }
-    }
-    // 3) Ninguno valido -> rechazar
-    return NextResponse.json({ ok: false, error: 'No autorizado' }, { status: 401 })
+    // MODO TEMPORAL: escrituras permitidas sin auth mientras ADMIN_PASSWORD no esta configurada en Render.
+    // TODO: cuando se configure ADMIN_PASSWORD, restaurar el bloque con verifyAdmin() y JWT.
+    return NextResponse.next()
   }
 
   return NextResponse.next()

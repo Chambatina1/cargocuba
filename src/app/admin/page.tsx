@@ -156,7 +156,10 @@ export default function AdminPage() {
     setLoggedIn(false);
   };
 
-  if (!loggedIn) return <LoginScreen onLogin={() => { localStorage.setItem('cc-admin', '1'); setLoggedIn(true); }} />;
+  // MODO TEMPORAL: admin sin contraseña (configuración pendiente de ADMIN_PASSWORD en Render).
+  // Si en algún momento se configura ADMIN_PASSWORD en Render, se puede restaurar el login
+  // reemplazando esta línea por: if (!loggedIn) return <LoginScreen onLogin={() => { localStorage.setItem('cc-admin', '1'); setLoggedIn(true); }} />;
+  if (false) return <LoginScreen onLogin={() => { localStorage.setItem('cc-admin', '1'); setLoggedIn(true); }} />;
 
   // Stats
   const esperando = pickups.filter(p => p.estado === 'esperando').length;
