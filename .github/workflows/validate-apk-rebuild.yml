@@ -1,0 +1,27 @@
+name: Validate APK rebuild
+
+on:
+  push:
+    branches: [feature/apk-rebuild]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  render-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      DATABASE_URL: postgresql://build:build@localhost:5432/build
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.11.0'
+          cache: npm
+      - run: npm install --ignore-scripts --no-audit --no-fund
+      - run: npx prisma generate
+      - run: npm run build
