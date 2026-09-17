@@ -165,12 +165,12 @@ export default function CargoCubaApp() {
       direccionRecojo: driver.direccionRecojo || null, comunidad: driver.comunidad || null,
       puntoPartidaLat: position.coords.latitude, puntoPartidaLng: position.coords.longitude,
       capacidad: driver.capacidad, velocidad: position.coords.speed ? position.coords.speed * 2.23694 : null,
-      heading: position.coords.heading,
+      heading: position.coords.heading ?? undefined,
     };
     const r = await fetch('/api/drivers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const j = await r.json();
     if (!r.ok || !j.ok) throw new Error(j.error || 'No se pudo actualizar el GPS');
-    emitter.sendLocation({ phone: payload.phone, nombre: payload.nombre, lat: payload.lat, lng: payload.lng, heading: payload.heading, speed: payload.velocidad });
+    emitter.sendLocation({ phone: payload.phone, nombre: payload.nombre, lat: payload.lat, lng: payload.lng, heading: payload.heading ?? undefined, speed: payload.velocidad ?? undefined });
     setMyLocation([payload.lat, payload.lng]);
   }
 
